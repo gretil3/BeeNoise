@@ -1,0 +1,48 @@
+# Central config — every module reads from here, nothing hardcoded in code.
+
+audio:
+  sample_rate: 16000        # canonical rate for the whole pipeline
+  channels: 1
+  frame_ms: 30              # VAD frame size (must be 10/20/30 for webrtcvad)
+  silence_ms: 800           # trailing silence before we stop recording
+  preroll_ms: 300           # audio kept before speech onset
+  min_utt_sec: 1.0          # reject shorter clips outright
+  vad_aggressiveness: 2     # webrtcvad 0-3, higher = more aggressive trimming
+
+speaker:
+  model_source: "speechbrain/spkrec-ecapa-voxceleb"
+  model_dir: "models/ecapa"
+  tau: 0.30                 # verification threshold — REPLACE after Phase 8 EER analysis
+  min_margin: 0.05          # top1 - top2 cosine margin required to accept
+  min_net_speech_sec: 1.5   # below this, don't trust the ID
+  smoothing_turns: 2        # consecutive agreeing turns required to switch active user
+
+enroll:
+  n_utterances: 10
+  utt_seconds: 4
+  reject_cosine: 0.5        # drop a clip if its embedding is this far from running mean
+
+stt:
+  model_size: "small"       # tiny | base | small | medium
+  device: "cpu"
+  compute_type: "int8"
+  language: "en"
+  beam_size: 5
+  min_avg_logprob: -1.0     # below this, ask user to repeat
+  max_no_speech_prob: 0.6
+
+llm:
+  provider: "anthropic"     # anthropic | ollama
+  model: "claude-sonnet-5"
+  ollama_model: "llama3.1:8b"
+  max_history_turns: 10
+  summarize_every: 10
+
+paths:
+  db: "data/profiles.db"
+  enroll_dir: "data/enroll"
+  eval_dir: "data/eval"
+  logs: "data/turns.log.jsonl"
+
+tts:
+  engine: "pyttsx3"         # pyttsx3 | piper

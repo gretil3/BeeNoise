@@ -1,0 +1,33 @@
+# Core audio
+sounddevice
+soundfile
+numpy
+scipy
+
+# VAD
+# Using the -wheels fork: same `import webrtcvad` API, but ships prebuilt
+# wheels so it doesn't need a C++ compiler on Windows.
+webrtcvad-wheels
+
+# Speaker embedding + STT
+# torch CPU wheel — install separately first, see README:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+speechbrain
+faster-whisper
+
+# Agent / LLM
+anthropic
+requests          # used for the Ollama fallback provider
+pyyaml
+
+# Evaluation
+jiwer
+matplotlib
+scikit-learn
+
+# Demo UI
+gradio
+
+# Optional TTS (pick one; pyttsx3 is zero-setup)
+pyttsx3
+pywin32; sys_platform == "win32"   # pyttsx3's SAPI5 driver needs this on Windows
