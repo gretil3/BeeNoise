@@ -13,9 +13,7 @@ speaker:
   model_source: "speechbrain/spkrec-ecapa-voxceleb"
   model_dir: "models/ecapa"
   tau: 0.30                 # verification threshold — REPLACE after Phase 8 EER analysis
-  min_margin: 0.05          # top1 - top2 cosine margin required to accept
   min_net_speech_sec: 1.5   # below this, don't trust the ID
-  smoothing_turns: 2        # consecutive agreeing turns required to switch active user
 
 enroll:
   n_utterances: 10
@@ -31,18 +29,13 @@ stt:
   min_avg_logprob: -1.0     # below this, ask user to repeat
   max_no_speech_prob: 0.6
 
-llm:
-  provider: "anthropic"     # anthropic | ollama
-  model: "claude-sonnet-5"
-  ollama_model: "llama3.1:8b"
-  max_history_turns: 10
-  summarize_every: 10
+attendance:
+  n_digits: 4                        # length of the readback challenge, e.g. "8-2-4-9"
+  max_attempts: 2                    # failed attempts allowed before lockout kicks in
+  lockout_minutes: 15                # cooldown once max_attempts is exhausted
+  digit_edit_distance_tolerance: 0   # 0 = exact digit-string match required
 
 paths:
   db: "data/profiles.db"
   enroll_dir: "data/enroll"
   eval_dir: "data/eval"
-  logs: "data/turns.log.jsonl"
-
-tts:
-  engine: "pyttsx3"         # pyttsx3 | piper

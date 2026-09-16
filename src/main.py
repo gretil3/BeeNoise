@@ -1,124 +1,82 @@
-"""Orchestrator: the full IDLE -> LISTENING -> PROCESSING loop.
+"""Attendance CLI.
 
-    IDLE --speech detected--> LISTENING --endpoint--> PROCESSING
-    PROCESSING: parallel { embed -> identify , transcribe }
-                unknown speaker -> GUEST
-                user changed    -> announce "Welcome back, {name}!"
-                -> LLM -> TTS -> IDLE
+For each student: claim a name -> read back a randomly generated digit
+challenge -> the system checks BOTH that the voice matches the claimed
+student's enrolled profile AND that the digits were read correctly. Two
+failed attempts in a row lock that name out for `attendance.lockout_minutes`
+(config.yaml) before another attempt is allowed.
 
-Run: python -m src.main
+Run: python -m src.main [--session "2026-09-16 Speech Recognition"]
 """
-import json
-import time
-from concurrent.futures import ThreadPoolExecutor
+import argparse
+from datetime import date
 
-from . import agent, profiles
-from .audio_io import record_until_silence
-from .config import CFG, path as cfg_path
-from .encoder import embed
-from .stt import transcribe_or_none
-from .vad import net_speech_seconds
-from .verify import identify, SpeakerTracker
-
-VOICE_COMMANDS = {
-    "who am i": "_cmd_who_am_i",
-    "goodbye": "_cmd_goodbye",
-    "forget this conversation": "_cmd_forget",
-}
+from . import attendance, challenge, profiles
+from .audio_io import record_fixed
 
 
-def _log_turn_event(event: dict):
-    log_path = cfg_path("logs")
-    with open(log_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(event) + "\n")
+def _prompt_claimed_user() -> profiles.User | None:
+    users = profiles.get_all_users()
+    if not users:
+        print("No enrolled students yet. Run `python -m src.enroll --name <name>` first.")
+        return None
+    print("\nEnrolled students:", ", ".join(u.name for u in users))
+    name = input("Name for attendance (blank to quit): ").strip()
+    if not name:
+        raise KeyboardInterrupt
+    user = profiles.find_user_ci(name)
+    if user is None:
+        print(f"No enrolled student named '{name}'.")
+    return user
 
 
-def _cmd_who_am_i(tracker: SpeakerTracker, score: float):
-    if tracker.active_user:
-        return f"You're {tracker.active_user.name}."
-    return "I'm not sure yet — I don't recognize your voice as an enrolled user."
-
-
-def _cmd_forget(tracker: SpeakerTracker, score: float):
-    if tracker.active_user:
-        profiles.set_summary(tracker.active_user.id, "")
-        return "Okay, I've cleared our conversation history."
-    return "There's no history to clear for a guest."
-
-
-def run():
-    print("Voice-aware assistant starting up. Loading models (this can take a bit)...")
-    executor = ThreadPoolExecutor(max_workers=2)
-    tracker = SpeakerTracker()
-    print("Ready. Speak into the mic (Ctrl+C to quit).\n")
-
+def run(session: str):
+    print(f"Attendance session: {session}")
+    print("Enter a blank name (or Ctrl+C) to quit.\n")
     try:
         while True:
-            audio = record_until_silence()
-            if len(audio) == 0:
+            user = _prompt_claimed_user()
+            if user is None:
                 continue
 
-            t0 = time.time()
-            net_speech = net_speech_seconds(audio)
-
-            fut_embed = executor.submit(embed, audio)
-            fut_text = executor.submit(transcribe_or_none, audio)
-            emb = fut_embed.result()
-            text = fut_text.result()
-            t1 = time.time()
-
-            if text is None:
-                print("(low-confidence transcription, ignoring — please repeat)")
+            if profiles.is_present(user.id, session):
+                print(f"{user.name} is already marked present for this session.\n")
                 continue
 
-            if net_speech < CFG["speaker"]["min_net_speech_sec"]:
-                result_user, score, margin = None, 0.0, 0.0
+            locked, until = attendance.lockout_status(user.id, session)
+            if locked:
+                print(f"{user.name} is locked out until {until} after too many failed "
+                      f"attempts. (The Gradio demo exposes a Skip-cooldown button for "
+                      f"live demos; the CLI intentionally does not.)\n")
+                continue
+
+            digits = attendance.new_challenge()
+            print(f"\nPlease read the following numbers aloud: "
+                  f"{challenge.format_for_display(digits)}")
+            input("Press Enter, then read the numbers clearly...")
+            audio = record_fixed(4.0)
+
+            result = attendance.attempt(user, session, digits, audio)
+            print(f"  transcribed: {result.transcribed!r}")
+            print(f"  speaker score: {result.speaker_score:.3f} "
+                  f"({'pass' if result.speaker_pass else 'fail'})")
+            print(f"  digits: {'match' if result.content_pass else 'no match'}")
+
+            if result.marked_present:
+                print(f"ATTENDANCE VERIFIED for {user.name}.\n")
+            elif result.locked_out:
+                print(f"Too many failed attempts. {user.name} is locked out until "
+                      f"{result.locked_until}.\n")
             else:
-                result = identify(emb)
-                result_user, score, margin = result.user, result.score, result.margin
-
-            from .verify import IdentifyResult
-            active_before = tracker.active_user
-            active = tracker.update(IdentifyResult(result_user, score, margin, {}))
-
-            if active and (active_before is None or active_before.id != active.id):
-                print(f"[speaker switch] Welcome back, {active.name}! (score={score:.3f})")
-
-            low = text.lower().strip().rstrip(".!?")
-            handled = False
-            for phrase, fn_name in VOICE_COMMANDS.items():
-                if phrase in low:
-                    reply = globals()[fn_name](tracker, score)
-                    handled = True
-                    break
-
-            if not handled:
-                reply = agent.respond(active, text)
-
-            t2 = time.time()
-            print(f"You ({active.name if active else 'guest'}, score={score:.2f}): {text}")
-            print(f"Assistant: {reply}\n")
-
-            try:
-                from .tts import speak
-                speak(reply)
-            except Exception as e:
-                print(f"(TTS unavailable: {e})")
-
-            _log_turn_event({
-                "ts": time.time(),
-                "speaker_pred": active.name if active else None,
-                "score": score,
-                "margin": margin,
-                "text": text,
-                "reply": reply,
-                "latency_embed_stt_ms": int((t1 - t0) * 1000),
-                "latency_total_ms": int((t2 - t0) * 1000),
-            })
+                print(f"Verification failed: {result.reason}. Try again.\n")
 
     except KeyboardInterrupt:
         print("\nShutting down.")
 
 
 if __name__ == "__main__":
-    run()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--session", default=str(date.today()),
+                         help="Session/class identifier, e.g. a date or class name")
+    args = parser.parse_args()
+    run(args.session)

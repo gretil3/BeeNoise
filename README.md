@@ -1,8 +1,25 @@
-# Voice-Aware Conversational Agent
+# Student Attendance via Voice Verification
 
 See [BLUEPRINT.md](BLUEPRINT.md) for the full design rationale, architecture
 diagram, evaluation plan, and known traps. This README is the "how do I
 actually run it" doc.
+
+## What this is
+
+Each student enrolls their voice once. To check in for a session, a student
+claims their name from the roster, the system shows a randomly generated
+digit challenge (e.g. `8-2-4-9`), and the student reads it aloud. Attendance
+is only marked when **both** checks pass:
+
+1. **Speaker verification** — the voice matches that student's enrolled
+   voiceprint (cosine similarity vs. their centroid).
+2. **Content verification** — the digits read back match the challenge
+   generated for *this* attempt.
+
+Requiring both is what stops a recording of the real student's voice from
+passing: it won't contain today's random digits. Two failed attempts in a
+row lock that name out for a cooldown period (`attendance.lockout_minutes`
+in config.yaml) before another attempt is allowed.
 
 ## Setup
 
@@ -12,16 +29,6 @@ py -3.12 -m venv .venv
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 ```
-
-If using the Anthropic provider (default), set your API key:
-
-```bash
-setx ANTHROPIC_API_KEY "sk-..."     # then restart your shell
-```
-
-To use a fully offline LLM instead, install [Ollama](https://ollama.com),
-run `ollama pull llama3.1:8b`, and set `llm.provider: ollama` in
-[config.yaml](config.yaml).
 
 All commands below are run from the project root (`voice_recognition/`),
 with the venv activated.
@@ -34,8 +41,6 @@ with the venv activated.
 - SpeechBrain's model fetcher symlinks by default, which needs Developer Mode
   or admin rights on Windows and fails with `WinError 1314` otherwise.
   `src/encoder.py` passes `local_strategy=LocalStrategy.COPY` to avoid it.
-- `pyttsx3`'s Windows driver (SAPI5) needs `pywin32`, included in
-  `requirements.txt`.
 
 ## Quick smoke tests (run in this order)
 
@@ -43,31 +48,34 @@ with the venv activated.
 python -m src.audio_io      # records 3s, plays it back, saves a wav
 python -m src.encoder       # records 4s, prints an embedding shape
 python -m src.stt           # records 4s, prints a transcript
-python -m src.agent         # text-only LLM test, no mic needed
+python -m src.challenge     # no mic needed — prints a sample challenge + matching logic
 ```
 
 If any of these fail, fix it before moving on — every later phase builds on
-these three primitives.
+these primitives.
 
 ## Day-to-day workflow
 
-**1. Enroll each team member / test user:**
+**1. Enroll each student:**
 
 ```bash
 python -m src.enroll --name Alex
-python -m src.enroll --name Sam
+python -m src.enroll --name Sam --student-id 2023510042
 ```
 
 Follow the prompts — 10 short phrases, ~4s each, in a normal speaking voice.
+Enrollment uses varied prose sentences, not digits — that builds a more
+general voiceprint than repeating the same content would.
 
-**2. Run the full assistant (CLI):**
+**2. Run attendance check-in (CLI):**
 
 ```bash
-python -m src.main
+python -m src.main --session "2026-09-16 Speech Recognition"
 ```
 
-Speak into the mic. It identifies who's talking, transcribes, replies via
-the LLM, and speaks the reply back.
+Type the claimed name, read the displayed digits aloud when prompted. The
+CLI prints the speaker score, whether the digits matched, and whether
+attendance was verified.
 
 **3. Run the Gradio demo (nicer for showing people):**
 
@@ -75,8 +83,12 @@ the LLM, and speaks the reply back.
 python -m src.demo_ui
 ```
 
-Opens a local web UI with a "Talk" tab, an "Enroll New User" tab, and a list
-of enrolled users with their embedding stats.
+Opens a local web UI with an **Attendance** tab (pick name → generate
+challenge → record → submit), an **Enroll New Student** tab, and a
+**Roster / Attendance Log** tab. The Attendance tab also has a
+"Skip cooldown (demo only)" button so a live demo doesn't have to sit
+through the real lockout timer — a real deployment should not expose that
+button to students.
 
 ## Evaluation
 
@@ -85,7 +97,7 @@ This is the part that earns the grade — don't skip it.
 **Speaker verification (EER):**
 
 1. Record held-out utterances (NOT the ones used for enrollment) into:
-   - `data/eval/<user_name>/*.wav` — genuine clips per enrolled user (~20 each)
+   - `data/eval/<student_name>/*.wav` — genuine clips per enrolled student (~20 each)
    - `data/eval/_impostors/*.wav` — clips from people who are NOT enrolled
 2. Run:
    ```bash
@@ -99,45 +111,37 @@ This is the part that earns the grade — don't skip it.
    python -m eval.eer --durations 1 2 4 8
    ```
 
-**ASR (WER):**
+**Digit-readback accuracy (WER-style):**
 
-1. Create `data/eval/wer/transcripts.json`:
-   ```json
-   {"clip1.wav": "the quick brown fox jumps over the lazy dog", "clip2.wav": "..."}
-   ```
-   with the matching wav files in `data/eval/wer/`.
+1. Create `data/eval/wer/transcripts.json` mapping wav filename → the
+   digit string that clip is a readback of, e.g.
+   `{"clip1.wav": "8 2 4 9", ...}`, with the matching wav files alongside.
 2. Run:
    ```bash
    python -m eval.wer --models tiny base small
    ```
    Produces a WER + latency table in `eval/results/wer_summary.json`.
 
+**Combined-system FAR (the important one — see BLUEPRINT.md Phase 8c):**
+Score a genuine recording of student A's readback of challenge X against
+student A's centroid, but with a *different* expected challenge Y, and show
+`attendance.attempt()` rejects it even though speaker verification alone
+would accept it. This demonstrates the digit challenge is load-bearing, not
+decorative.
+
 ## Project structure
 
 See the "Repo layout" section of [BLUEPRINT.md](BLUEPRINT.md#2-repo-layout).
 
-## Team split (4 people, 16 weeks)
-
-See "Suggested team split" and "Revised 16-week timeline" — divide work by
-module ownership:
-
-| Person | Files they own |
-|---|---|
-| Audio/Speaker | `src/audio_io.py`, `src/vad.py`, `src/encoder.py`, `src/enroll.py`, `src/verify.py` |
-| ASR | `src/stt.py`, `eval/wer.py` |
-| Backend/Agent | `src/profiles.py`, `src/agent.py`, `src/main.py` |
-| Eval/UI | `eval/eer.py`, `src/demo_ui.py`, report figures |
-
-Everyone agrees on the audio contract on day one (16kHz mono float32) and
-never touches it again — that's what lets these be developed in parallel.
-
 ## Known limitations (say these out loud in your report, don't hide them)
 
-- Verification is text-independent but not content-free: utterances under
-  ~1.5s of net speech are unreliable — see `speaker.min_net_speech_sec`.
-- No anti-spoofing: a recording of an enrolled user's voice will pass
-  verification. Out of scope, but name it as a threat model gap.
+- Verification is text-independent for enrollment but text-*dependent* for
+  check-in (the digit challenge) — that's intentional, see BLUEPRINT.md.
+- No anti-spoofing against a *live* attacker who hears the challenge and
+  splices pre-recorded digit clips together in real time. A static replay
+  of an old recording is defended against; a targeted live attack is not.
+  Name it as a threat-model gap, not a bug.
 - Enrollment and testing on different microphones will inflate EER. Note
   which device(s) you used.
 - Voiceprints are biometric data — kept local in `data/profiles.db` only.
-  Use `profiles.delete_user(name)` to remove someone's data.
+  Use `profiles.delete_user(name)` to remove a student's data.

@@ -3,6 +3,7 @@ sounddevice
 soundfile
 numpy
 scipy
+pyyaml
 
 # VAD
 # Using the -wheels fork: same `import webrtcvad` API, but ships prebuilt
@@ -15,19 +16,9 @@ webrtcvad-wheels
 speechbrain
 faster-whisper
 
-# Agent / LLM
-anthropic
-requests          # used for the Ollama fallback provider
-pyyaml
-
 # Evaluation
 jiwer
 matplotlib
-scikit-learn
 
 # Demo UI
 gradio
-
-# Optional TTS (pick one; pyttsx3 is zero-setup)
-pyttsx3
-pywin32; sys_platform == "win32"   # pyttsx3's SAPI5 driver needs this on Windows

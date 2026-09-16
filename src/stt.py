@@ -20,7 +20,7 @@ def _get_model():
     return _model
 
 
-def transcribe(wav16k: np.ndarray):
+def transcribe(wav16k: np.ndarray, initial_prompt: str | None = None):
     """Returns (text, avg_logprob, no_speech_prob). Caller should gate on
     confidence before trusting the text — see config.yaml stt thresholds."""
     model = _get_model()
@@ -29,6 +29,7 @@ def transcribe(wav16k: np.ndarray):
         language=CFG["stt"]["language"],
         beam_size=CFG["stt"]["beam_size"],
         vad_filter=True,
+        initial_prompt=initial_prompt,
     )
     segments = list(segments)
     if not segments:
@@ -40,10 +41,10 @@ def transcribe(wav16k: np.ndarray):
     return text, avg_logprob, no_speech_prob
 
 
-def transcribe_or_none(wav16k: np.ndarray):
+def transcribe_or_none(wav16k: np.ndarray, initial_prompt: str | None = None):
     """Applies the confidence gate from config.yaml. Returns None if the
-    transcription is too unreliable to hand to the LLM."""
-    text, avg_logprob, no_speech_prob = transcribe(wav16k)
+    transcription is too unreliable to trust."""
+    text, avg_logprob, no_speech_prob = transcribe(wav16k, initial_prompt=initial_prompt)
     if not text:
         return None
     if avg_logprob < CFG["stt"]["min_avg_logprob"]:
@@ -51,6 +52,17 @@ def transcribe_or_none(wav16k: np.ndarray):
     if no_speech_prob > CFG["stt"]["max_no_speech_prob"]:
         return None
     return text
+
+
+DIGIT_PROMPT = "The reading is: zero one two three four five six seven eight nine."
+
+
+def transcribe_digits(wav16k: np.ndarray) -> str | None:
+    """Transcribes a spoken digit-readback challenge. Biases decoding
+    toward digit vocabulary via an initial prompt — free-form Whisper
+    decoding otherwise sometimes turns a short digit string into an
+    unrelated short word."""
+    return transcribe_or_none(wav16k, initial_prompt=DIGIT_PROMPT)
 
 
 if __name__ == "__main__":

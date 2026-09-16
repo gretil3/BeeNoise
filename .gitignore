@@ -6,6 +6,6 @@ models/
 data/profiles.db
 data/enroll/
 data/eval/
-data/turns.log.jsonl
 eval/results/
 .env
+.claude/

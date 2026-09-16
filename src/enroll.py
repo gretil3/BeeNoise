@@ -28,7 +28,7 @@ PROMPTS = [
 ]
 
 
-def enroll(name: str):
+def enroll(name: str, student_id: str | None = None):
     n = CFG["enroll"]["n_utterances"]
     dur = CFG["enroll"]["utt_seconds"]
     reject_cos = CFG["enroll"]["reject_cosine"]
@@ -81,13 +81,14 @@ def enroll(name: str):
         print(f"\nUpdated existing profile for '{name}' "
               f"({len(embeddings)} utterances, spread={spread:.3f}).")
     else:
-        profiles.add_user(name, centroid, len(embeddings), spread)
+        profiles.add_user(name, centroid, len(embeddings), spread, student_id=student_id)
         print(f"\nEnrolled '{name}' with {len(embeddings)} utterances "
               f"(intra-speaker spread={spread:.3f}).")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--name", required=True, help="User name to enroll")
+    parser.add_argument("--name", required=True, help="Student name to enroll")
+    parser.add_argument("--student-id", default=None, help="Optional student ID / NIM")
     args = parser.parse_args()
-    enroll(args.name)
+    enroll(args.name, args.student_id)
