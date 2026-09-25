@@ -1,0 +1,17 @@
+[project]
+name = "beenoise"
+version = "0.1.0"
+description = "Multi-speaker denoised transcription: denoise -> diarize -> speaker ID -> Whisper -> subtitles"
+requires-python = ">=3.10,<3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]
+ignore = ["E501"]

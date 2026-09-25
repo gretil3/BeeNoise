@@ -1,147 +1,169 @@
-# Student Attendance via Voice Verification
+# BeeNoise — Multi-Speaker Denoised Transcription
 
-See [BLUEPRINT.md](BLUEPRINT.md) for the full design rationale, architecture
-diagram, evaluation plan, and known traps. This README is the "how do I
-actually run it" doc.
+Give it a noisy recording (vlog, lecture, group conversation). It returns:
 
-## What this is
+1. a **denoised** audio/video,
+2. **subtitles** with timestamps,
+3. **speaker names** on every line: enrolled people by name, everyone else as
+   `Speaker 1`, `Speaker 2`, ...
 
-Each student enrolls their voice once. To check in for a session, a student
-claims their name from the roster, the system shows a randomly generated
-digit challenge (e.g. `8-2-4-9`), and the student reads it aloud. Attendance
-is only marked when **both** checks pass:
-
-1. **Speaker verification** — the voice matches that student's enrolled
-   voiceprint (cosine similarity vs. their centroid).
-2. **Content verification** — the digits read back match the challenge
-   generated for *this* attempt.
-
-Requiring both is what stops a recording of the real student's voice from
-passing: it won't contain today's random digits. Two failed attempts in a
-row lock that name out for a cooldown period (`attendance.lockout_minutes`
-in config.yaml) before another attempt is allowed.
-
-## Setup
-
-```bash
-py -3.12 -m venv .venv
-.venv\Scripts\activate          # Windows
-pip install torch --index-url https://download.pytorch.org/whl/cpu
-pip install -r requirements.txt
+```
+video/audio ─► [1] denoise ─► [2] diarize ─► [3] speaker ID ─► [4] Whisper ─► [5] subtitles
+               DeepFilterNet   pyannote 3.1    ECAPA-TDNN        faster-whisper   .srt/.vtt/.mp4
 ```
 
-All commands below are run from the project root (`voice_recognition/`),
-with the venv activated.
+- **[BLUEPRINT.md](BLUEPRINT.md):** the concept, evaluation plan and design decisions. Read this first.
+- **[CONTRIBUTING.md](CONTRIBUTING.md):** how the team works together (branches, PRs, who owns what).
+- **[data/README.md](data/README.md):** what eval data to record and how to label it.
 
-## Windows-specific gotchas already fixed in this repo
+---
 
-- `webrtcvad` needs a C++ compiler to build from source on Windows.
-  `requirements.txt` uses `webrtcvad-wheels` instead — same `import webrtcvad`
-  API, prebuilt wheel.
-- SpeechBrain's model fetcher symlinks by default, which needs Developer Mode
-  or admin rights on Windows and fails with `WinError 1314` otherwise.
-  `src/encoder.py` passes `local_strategy=LocalStrategy.COPY` to avoid it.
+## Setup (each teammate, once)
 
-## Quick smoke tests (run in this order)
+**1. Python 3.10 or 3.11.** Not 3.12+, because DeepFilterNet has no wheels
+for it. Check with `py -0` on Windows. Install 3.11 from python.org if needed.
+
+**2. Create the environment** (from the repo root):
 
 ```bash
-python -m src.audio_io      # records 3s, plays it back, saves a wav
-python -m src.encoder       # records 4s, prints an embedding shape
-python -m src.stt           # records 4s, prints a transcript
-python -m src.challenge     # no mic needed — prints a sample challenge + matching logic
+py -3.11 -m venv .venv
+```
+```bash
+.venv\Scripts\activate
+```
+```bash
+pip install torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+```
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-If any of these fail, fix it before moving on — every later phase builds on
-these primitives.
+On macOS/Linux use `python3.11 -m venv .venv` and `source .venv/bin/activate`.
+With an NVIDIA GPU, install torch from the matching CUDA index instead, then
+set `device: cuda` in `config.yaml` (and `compute_type: float16` for stt).
 
-## Day-to-day workflow
+**3. HuggingFace token** (for pyannote diarization):
 
-**1. Enroll each student:**
+1. Make a free account → https://huggingface.co/settings/tokens → create a *read* token.
+2. While logged in, click "Agree" on **both**
+   [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
+   and [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0).
+3. `copy .env.example .env` and paste your token into `.env`. It's gitignored, so never commit it.
+
+No token yet? Everything still works with `--diarizer ecapa_cluster`.
+
+**4. Check everything:**
+
+```bash
+python -m src.check_env
+```
+```bash
+python -m src.check_env --models
+```
+
+The second command loads every model once. The first run downloads ~1–2 GB
+into `.cache/` and `models/` inside the project folder, so C: doesn't fill up.
+
+**5. Run the tests** (a few seconds, no models needed):
+
+```bash
+python -m pytest
+```
+
+---
+
+## Usage
+
+**Enroll each speaker** (reads a paragraph aloud, ~30–60 s):
 
 ```bash
 python -m src.enroll --name Alex
-python -m src.enroll --name Sam --student-id 2023510042
+```
+```bash
+python -m src.enroll --name Budi --lang id
+```
+```bash
+python -m src.enroll --name Citra --file citra_reading.m4a
+```
+```bash
+python -m src.profiles list
 ```
 
-Follow the prompts — 10 short phrases, ~4s each, in a normal speaking voice.
-Enrollment uses varied prose sentences, not digits — that builds a more
-general voiceprint than repeating the same content would.
-
-**2. Run attendance check-in (CLI):**
+**Process a recording:**
 
 ```bash
-python -m src.main --session "2026-09-16 Speech Recognition"
+python -m src.main path/to/recording.mp4
 ```
 
-Type the claimed name, read the displayed digits aloud when prompted. The
-CLI prints the speaker score, whether the digits matched, and whether
-attendance was verified.
+Outputs go to `outputs/<recording>/`: `denoised.wav`, `subtitles.srt`,
+`subtitles.vtt`, `transcript.json`, `diarization.rttm`, and for videos
+`<name>_subtitled.mp4` (denoised audio + a subtitle track you can toggle).
 
-**3. Run the Gradio demo (nicer for showing people):**
+Useful flags:
+
+| Flag | Effect |
+|---|---|
+| `--num-speakers 3` | tell the diarizer how many people there are (big accuracy boost) |
+| `--burn` | draw subtitles into the video picture instead of a toggleable track |
+| `--denoiser none` / `spectral` | skip denoising / use the classical baseline |
+| `--diarizer ecapa_cluster` | our baseline diarizer, no HF token needed |
+| `--strategy segment` | run Whisper per speaker turn instead of on the whole track |
+| `--language id` | force the language (default: auto-detect) |
+
+Other settings (thresholds, model sizes, subtitle line length) live in
+[config.yaml](config.yaml).
+
+**Demo UI** (for presenting):
 
 ```bash
 python -m src.demo_ui
 ```
 
-Opens a local web UI with an **Attendance** tab (pick name → generate
-challenge → record → submit), an **Enroll New Student** tab, and a
-**Roster / Attendance Log** tab. The Attendance tab also has a
-"Skip cooldown (demo only)" button so a live demo doesn't have to sit
-through the real lockout timer — a real deployment should not expose that
-button to students.
+**Denoise one file only:**
+
+```bash
+python -m src.denoise noisy.wav
+```
+
+---
 
 ## Evaluation
 
-This is the part that earns the grade — don't skip it.
+First record the eval data described in [data/README.md](data/README.md).
+Every script compares **with vs. without denoising** by default (the
+blueprint's ablation) and writes JSON + PNG charts to `eval/results/`.
 
-**Speaker verification (EER):**
+| Metric | Command | Needs |
+|---|---|---|
+| 1. Denoising quality (ΔSNR, ΔSI-SDR, STOI) | `python -m eval.denoise_quality` | `eval/wer/*.wav`, `eval/noise/` |
+| 2. Diarization Error Rate | `python -m eval.der` | `eval/diarization/` + labels |
+| 3. Speaker ID accuracy + false accepts, tau tuning | `python -m eval.speaker_id` | enrolled speakers + `eval/diarization/` |
+| 4. WER per noise level | `python -m eval.wer` | `eval/wer/` + `transcripts.json`, `eval/noise/` |
 
-1. Record held-out utterances (NOT the ones used for enrollment) into:
-   - `data/eval/<student_name>/*.wav` — genuine clips per enrolled student (~20 each)
-   - `data/eval/_impostors/*.wav` — clips from people who are NOT enrolled
-2. Run:
-   ```bash
-   python -m eval.eer
-   ```
-   This prints the EER, plots a DET-style curve and a score histogram into
-   `eval/results/`, and tells you what to set `speaker.tau` to in
-   `config.yaml`.
-3. Ablations:
-   ```bash
-   python -m eval.eer --durations 1 2 4 8
-   ```
+Extra comparisons for the report:
 
-**Digit-readback accuracy (WER-style):**
+```bash
+python -m eval.der --diarizers pyannote ecapa_cluster --oracle-num-speakers
+```
+```bash
+python -m eval.denoise_quality --backends deepfilternet spectral --save-mixtures
+```
+```bash
+python -m eval.speaker_id --mode pipeline
+```
 
-1. Create `data/eval/wer/transcripts.json` mapping wav filename → the
-   digit string that clip is a readback of, e.g.
-   `{"clip1.wav": "8 2 4 9", ...}`, with the matching wav files alongside.
-2. Run:
-   ```bash
-   python -m eval.wer --models tiny base small
-   ```
-   Produces a WER + latency table in `eval/results/wer_summary.json`.
+After running `eval.speaker_id`, copy the recommended `tau` into
+`config.yaml` (`speaker.tau` is a placeholder until then).
 
-**Combined-system FAR (the important one — see BLUEPRINT.md Phase 8c):**
-Score a genuine recording of student A's readback of challenge X against
-student A's centroid, but with a *different* expected challenge Y, and show
-`attendance.attempt()` rejects it even though speaker verification alone
-would accept it. This demonstrates the digit challenge is load-bearing, not
-decorative.
+---
 
-## Project structure
+## Troubleshooting
 
-See the "Repo layout" section of [BLUEPRINT.md](BLUEPRINT.md#2-repo-layout).
-
-## Known limitations (say these out loud in your report, don't hide them)
-
-- Verification is text-independent for enrollment but text-*dependent* for
-  check-in (the digit challenge) — that's intentional, see BLUEPRINT.md.
-- No anti-spoofing against a *live* attacker who hears the challenge and
-  splices pre-recorded digit clips together in real time. A static replay
-  of an old recording is defended against; a targeted live attack is not.
-  Name it as a threat-model gap, not a bug.
-- Enrollment and testing on different microphones will inflate EER. Note
-  which device(s) you used.
-- Voiceprints are biometric data — kept local in `data/profiles.db` only.
-  Use `profiles.delete_user(name)` to remove a student's data.
+| Symptom | Fix |
+|---|---|
+| `Cargo, the Rust package manager, is not installed` during pip install | You're on Python 3.12+. Recreate the venv with 3.10/3.11. |
+| `Could not load pyannote/speaker-diarization-3.1` | Accept the terms on **both** pyannote model pages with the token's account, and check `.env`. |
+| `WinError 1314` (symlink) | Already handled (`LocalStrategy.COPY` in `src/encoder.py`). If it's from HF hub, turn on Windows Developer Mode. |
+| Model downloads fill up C: | They go to `.cache/` in the repo via `HF_HOME` (set in `src/config.py`). DeepFilterNet's small model goes to `%LOCALAPPDATA%\DeepFilterNet`. |
+| Everything is slow | Use `stt.model_size: base` while developing, and `small`/`medium` for final numbers. The first run of each model is slower because it downloads. |
+| Names are wrong / everyone is "Speaker N" | Tune `speaker.tau` with `eval.speaker_id`, re-enroll with 30 s+ of clean speech, or try `pipeline.speaker_id_on: raw`. |

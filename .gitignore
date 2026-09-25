@@ -1,11 +1,29 @@
+# Python
 .venv/
+venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Secrets — each teammate keeps their own HF token here
+.env
+
+# Downloaded model weights / HF cache (hundreds of MB)
 models/
 .cache/
-data/profiles.db
-data/enroll/
-data/eval/
+
+# Data: voiceprints are biometric data and recordings are personal.
+# NEVER commit them — share eval data through the team drive instead.
+data/*
+!data/README.md
+
+# Generated outputs
+outputs/
 eval/results/
-.env
+enhance.log
+
+# Tooling
 .claude/
+.vscode/
+.idea/

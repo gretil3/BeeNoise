@@ -1,24 +1,44 @@
-# Core audio
-sounddevice
-soundfile
-numpy
+# Python 3.10 or 3.11 ONLY. DeepFilterNet has no Windows wheels for 3.12+
+# (pip would try to compile it from Rust source and fail).
+#
+# On Windows/CPU, install torch first from the CPU index (smaller download):
+#   pip install torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+# then: pip install -r requirements.txt
+
+# Deep learning runtime — pinned: pyannote 3.3, SpeechBrain 1.0 and
+# DeepFilterNet 0.5.6 are all known to work together on this version.
+torch==2.5.1
+torchaudio==2.5.1
+numpy>=1.24,<2            # DeepFilterNet requires numpy < 2
+huggingface_hub>=0.23,<1.0  # 1.x removed `use_auth_token`, which pyannote 3.x still passes
+hf_xet                    # faster model downloads from the HF hub
+
+# Audio I/O
 scipy
+soundfile
+sounddevice               # microphone recording for enrollment
+webrtcvad-wheels          # VAD; prebuilt wheels, no C++ compiler needed on Windows
+imageio-ffmpeg            # bundles an ffmpeg binary: video decoding + subtitle muxing
 pyyaml
 
-# VAD
-# Using the -wheels fork: same `import webrtcvad` API, but ships prebuilt
-# wheels so it doesn't need a C++ compiler on Windows.
-webrtcvad-wheels
+# Stage 1 — denoise
+deepfilternet==0.5.6
+noisereduce               # classical spectral-gating baseline
 
-# Speaker embedding + STT
-# torch CPU wheel — install separately first, see README:
-#   pip install torch --index-url https://download.pytorch.org/whl/cpu
-speechbrain
-faster-whisper
+# Stage 2 — diarization
+pyannote.audio==3.3.2
+
+# Stage 3 — speaker embeddings
+speechbrain>=1.0,<1.1
+
+# Stage 4 — transcription
+faster-whisper>=1.1
 
 # Evaluation
-jiwer
+jiwer                     # WER
+pystoi                    # STOI (intelligibility)
 matplotlib
+# pesq                    # optional PESQ metric; needs a C compiler on Windows
 
 # Demo UI
-gradio
+gradio>=5,<6

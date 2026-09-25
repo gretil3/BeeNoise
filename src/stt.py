@@ -1,7 +1,18 @@
-"""Speech-to-text via faster-whisper (CTranslate2-backed, fast on CPU)."""
+"""Stage 4 — transcription with Whisper (via faster-whisper).
+
+Whisper is an encoder-decoder Transformer trained on 680k hours of weakly
+supervised audio: log-Mel spectrogram (30 s windows) -> encoder -> a decoder
+that autoregressively emits text tokens plus timestamp tokens.
+faster-whisper runs the same weights on CTranslate2 (int8 on CPU), ~4x faster
+than the reference implementation. `word_timestamps=True` aligns each word
+using the decoder's cross-attention — that's what lets us attach a speaker to
+every word in stage 5.
+"""
 import numpy as np
 
+from .audio_io import cut
 from .config import CFG
+from .segments import Segment, Word, merge_adjacent
 
 _model = None
 
@@ -10,68 +21,48 @@ def _get_model():
     global _model
     if _model is None:
         from faster_whisper import WhisperModel
-        print(f"Loading faster-whisper '{CFG['stt']['model_size']}' "
-              f"(first run downloads the model)...")
-        _model = WhisperModel(
-            CFG["stt"]["model_size"],
-            device=CFG["stt"]["device"],
-            compute_type=CFG["stt"]["compute_type"],
-        )
+        size = CFG["stt"]["model_size"]
+        print(f"Loading Whisper '{size}' (first run downloads the model)...")
+        _model = WhisperModel(size, device=CFG["stt"]["device"],
+                              compute_type=CFG["stt"]["compute_type"])
     return _model
 
 
-def transcribe(wav16k: np.ndarray, initial_prompt: str | None = None):
-    """Returns (text, avg_logprob, no_speech_prob). Caller should gate on
-    confidence before trusting the text — see config.yaml stt thresholds."""
-    model = _get_model()
-    segments, info = model.transcribe(
-        wav16k,
-        language=CFG["stt"]["language"],
+def transcribe_words(wav16: np.ndarray, language: str | None = None,
+                     offset: float = 0.0, speaker: str | None = None) -> tuple[list[Word], str]:
+    """Returns (words with absolute timestamps, detected language)."""
+    segments, info = _get_model().transcribe(
+        wav16,
+        language=language or CFG["stt"]["language"],
         beam_size=CFG["stt"]["beam_size"],
         vad_filter=True,
-        initial_prompt=initial_prompt,
+        word_timestamps=True,
     )
-    segments = list(segments)
-    if not segments:
-        return "", -9.9, 1.0
-
-    text = " ".join(s.text.strip() for s in segments).strip()
-    avg_logprob = float(np.mean([s.avg_logprob for s in segments]))
-    no_speech_prob = float(np.mean([getattr(s, "no_speech_prob", 0.0) for s in segments]))
-    return text, avg_logprob, no_speech_prob
+    words = []
+    for seg in segments:
+        for w in seg.words or []:
+            words.append(Word(w.start + offset, w.end + offset, w.word, speaker, w.probability))
+    return words, info.language
 
 
-def transcribe_or_none(wav16k: np.ndarray, initial_prompt: str | None = None):
-    """Applies the confidence gate from config.yaml. Returns None if the
-    transcription is too unreliable to trust."""
-    text, avg_logprob, no_speech_prob = transcribe(wav16k, initial_prompt=initial_prompt)
-    if not text:
-        return None
-    if avg_logprob < CFG["stt"]["min_avg_logprob"]:
-        return None
-    if no_speech_prob > CFG["stt"]["max_no_speech_prob"]:
-        return None
-    return text
+def transcribe_text(wav16: np.ndarray, language: str | None = None) -> str:
+    words, _ = transcribe_words(wav16, language)
+    return "".join(w.text for w in words).strip()
 
 
-DIGIT_PROMPT = "The reading is: zero one two three four five six seven eight nine."
-
-
-def transcribe_digits(wav16k: np.ndarray) -> str | None:
-    """Transcribes a spoken digit-readback challenge. Biases decoding
-    toward digit vocabulary via an initial prompt — free-form Whisper
-    decoding otherwise sometimes turns a short digit string into an
-    unrelated short word."""
-    return transcribe_or_none(wav16k, initial_prompt=DIGIT_PROMPT)
-
-
-if __name__ == "__main__":
-    from .audio_io import record_fixed
-    from .vad import trim_silence
-
-    print("Say a sentence for 4 seconds...")
-    clip = record_fixed(4.0)
-    clip = trim_silence(clip)
-    text, logprob, nsp = transcribe(clip)
-    print(f"Text: {text!r}")
-    print(f"avg_logprob={logprob:.3f}  no_speech_prob={nsp:.3f}")
+def transcribe_turns(wav16: np.ndarray, sr: int, turns: list[Segment],
+                     language: str | None = None) -> tuple[list[Word], str]:
+    """`segment` strategy: transcribe each speaker turn on its own. Words come
+    back already labelled with the turn's speaker."""
+    pad = 0.2
+    words, langs = [], []
+    for t in merge_adjacent(turns, max_gap=0.5):
+        start = max(0.0, t.start - pad)
+        clip = cut(wav16, sr, start, t.end + pad)
+        if len(clip) < int(0.3 * sr):
+            continue
+        w, lang = transcribe_words(clip, language, offset=start, speaker=t.speaker)
+        words.extend(w)
+        langs.append(lang)
+    lang = max(set(langs), key=langs.count) if langs else (language or "")
+    return words, lang

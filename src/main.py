@@ -1,82 +1,171 @@
-"""Attendance CLI.
+"""Full pipeline: python -m src.main path/to/recording.mp4
 
-For each student: claim a name -> read back a randomly generated digit
-challenge -> the system checks BOTH that the voice matches the claimed
-student's enrolled profile AND that the digits were read correctly. Two
-failed attempts in a row lock that name out for `attendance.lockout_minutes`
-(config.yaml) before another attempt is allowed.
+    input video/audio
+      [1] denoise      -> cleaned audio track
+      [2] diarize      -> "who spoke when" (anonymous labels)
+      [3] speaker ID   -> labels -> enrolled names or "Speaker N"
+      [4] transcribe   -> words with timestamps (Whisper)
+      [5] merge        -> subtitles (.srt/.vtt), optionally put back on the video
 
-Run: python -m src.main [--session "2026-09-16 Speech Recognition"]
+Outputs land in outputs/<input-name>/:
+    denoised.wav        cleaned audio (48 kHz)
+    diarization.rttm    who-spoke-when with final names (compare with eval/der.py)
+    subtitles.srt/.vtt  speaker-labelled subtitles
+    transcript.json     cues, words, speaker matches + scores, timings
+    <name>_subtitled.mp4  (video inputs only) denoised audio + subtitle track
+
+Every stage can be swapped from the CLI, which is how the ablations are run:
+    python -m src.main clip.mp4 --denoiser none        # skip stage 1
+    python -m src.main clip.mp4 --diarizer ecapa_cluster --num-speakers 2
 """
 import argparse
-from datetime import date
+import time
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
 
-from . import attendance, challenge, profiles
-from .audio_io import record_fixed
+import numpy as np
 
-
-def _prompt_claimed_user() -> profiles.User | None:
-    users = profiles.get_all_users()
-    if not users:
-        print("No enrolled students yet. Run `python -m src.enroll --name <name>` first.")
-        return None
-    print("\nEnrolled students:", ", ".join(u.name for u in users))
-    name = input("Name for attendance (blank to quit): ").strip()
-    if not name:
-        raise KeyboardInterrupt
-    user = profiles.find_user_ci(name)
-    if user is None:
-        print(f"No enrolled student named '{name}'.")
-    return user
+from .audio_io import has_video, load_audio, resample, save_wav
+from .config import CFG, ROOT
+from .segments import Cue, Segment, Word, write_rttm
 
 
-def run(session: str):
-    print(f"Attendance session: {session}")
-    print("Enter a blank name (or Ctrl+C) to quit.\n")
-    try:
-        while True:
-            user = _prompt_claimed_user()
-            if user is None:
-                continue
+@dataclass
+class Options:
+    denoiser: str = CFG["denoise"]["backend"]
+    diarizer: str = CFG["diarize"]["backend"]
+    num_speakers: int | None = None
+    min_speakers: int | None = None
+    max_speakers: int | None = None
+    strategy: str = CFG["stt"]["strategy"]
+    language: str | None = None
+    diarize_on: str = CFG["pipeline"]["diarize_on"]
+    speaker_id_on: str = CFG["pipeline"]["speaker_id_on"]
+    transcribe_on: str = CFG["pipeline"]["transcribe_on"]
 
-            if profiles.is_present(user.id, session):
-                print(f"{user.name} is already marked present for this session.\n")
-                continue
 
-            locked, until = attendance.lockout_status(user.id, session)
-            if locked:
-                print(f"{user.name} is locked out until {until} after too many failed "
-                      f"attempts. (The Gradio demo exposes a Skip-cooldown button for "
-                      f"live demos; the CLI intentionally does not.)\n")
-                continue
+@dataclass
+class Result:
+    denoised: np.ndarray                 # at output_sr
+    segments: list[Segment]              # diarization, final display names
+    matches: dict                        # label -> speaker_id.Match
+    words: list[Word]
+    cues: list[Cue]
+    language: str
+    timings: dict = field(default_factory=dict)
 
-            digits = attendance.new_challenge()
-            print(f"\nPlease read the following numbers aloud: "
-                  f"{challenge.format_for_display(digits)}")
-            input("Press Enter, then read the numbers clearly...")
-            audio = record_fixed(4.0)
 
-            result = attendance.attempt(user, session, digits, audio)
-            print(f"  transcribed: {result.transcribed!r}")
-            print(f"  speaker score: {result.speaker_score:.3f} "
-                  f"({'pass' if result.speaker_pass else 'fail'})")
-            print(f"  digits: {'match' if result.content_pass else 'no match'}")
+def run(raw: np.ndarray, sr: int, opts: Options | None = None, log=print) -> Result:
+    """Run stages 1-5 on an in-memory waveform (`sr` should be output_sr)."""
+    from .denoise import denoise
+    from .diarize import diarize
+    from .merge import assign_speakers, build_cues
+    from .speaker_id import identify_clusters, relabel
+    from .stt import transcribe_turns, transcribe_words
 
-            if result.marked_present:
-                print(f"ATTENDANCE VERIFIED for {user.name}.\n")
-            elif result.locked_out:
-                print(f"Too many failed attempts. {user.name} is locked out until "
-                      f"{result.locked_until}.\n")
-            else:
-                print(f"Verification failed: {result.reason}. Try again.\n")
+    opts = opts or Options()
+    a_sr = CFG["audio"]["analysis_sr"]
+    timings = {}
 
-    except KeyboardInterrupt:
-        print("\nShutting down.")
+    def timed(name):
+        timings[name] = time.time()
+        log(f"[{len(timings)}/5] {name}...")
+
+    timed("denoise")
+    clean, clean_sr = denoise(raw, sr, opts.denoiser)
+    clean = resample(clean, clean_sr, sr)
+    tracks = {"raw": resample(raw, sr, a_sr), "denoised": resample(clean, sr, a_sr)}
+
+    timed("diarize")
+    segs = diarize(tracks[opts.diarize_on], a_sr, opts.diarizer,
+                   opts.num_speakers, opts.min_speakers, opts.max_speakers)
+    log(f"      {len(segs)} turns, {len({s.speaker for s in segs})} speakers")
+
+    timed("speaker ID")
+    matches = identify_clusters(tracks[opts.speaker_id_on], a_sr, segs)
+    for m in matches.values():
+        score = f"{m.score:.3f}" if m.score is not None else "n/a"
+        log(f"      {m.label} -> {m.name:<14} (best={m.best_candidate}, cos={score}, "
+            f"{m.speech_sec:.1f}s speech)")
+    named = relabel(segs, matches)
+
+    timed("transcribe")
+    if opts.strategy == "segment":
+        words, lang = transcribe_turns(tracks[opts.transcribe_on], a_sr, named, opts.language)
+    else:
+        words, lang = transcribe_words(tracks[opts.transcribe_on], opts.language)
+
+    timed("merge")
+    cues = build_cues(assign_speakers(words, named))
+
+    now = time.time()
+    names = list(timings)
+    durations = {n: round((timings[names[i + 1]] if i + 1 < len(names) else now) - timings[n], 2)
+                 for i, n in enumerate(names)}
+    return Result(clean, named, matches, words, cues, lang, durations)
+
+
+def run_file(input_path, out_dir=None, opts: Options | None = None, burn: bool = False,
+             log=print) -> dict[str, Path]:
+    """Load a file, run the pipeline, write every output. Returns output paths."""
+    from .merge import write_outputs
+    from .video import mux
+
+    input_path = Path(input_path)
+    opts = opts or Options()
+    out_dir = Path(out_dir) if out_dir else ROOT / CFG["paths"]["output_dir"] / input_path.stem
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    sr = CFG["audio"]["output_sr"]
+    log(f"Loading {input_path.name}...")
+    raw = load_audio(input_path, sr)
+    log(f"      {len(raw) / sr:.1f}s of audio")
+
+    res = run(raw, sr, opts, log)
+
+    paths = {"denoised": out_dir / "denoised.wav", "rttm": out_dir / "diarization.rttm"}
+    save_wav(paths["denoised"], res.denoised, sr)
+    write_rttm(res.segments, paths["rttm"], input_path.stem)
+    paths.update(write_outputs(res.cues, out_dir, extra={
+        "input": str(input_path),
+        "language": res.language,
+        "options": asdict(opts),
+        "speakers": {k: asdict(m) for k, m in res.matches.items()},
+        "timings_sec": res.timings,
+    }))
+
+    if has_video(input_path):
+        log("Writing video...")
+        paths["video"] = mux(input_path, paths["denoised"], paths["srt"],
+                             out_dir / f"{input_path.stem}_subtitled.mp4", burn=burn)
+
+    log(f"\nDone in {sum(res.timings.values()):.1f}s -> {out_dir}")
+    for k, p in paths.items():
+        log(f"  {k:<9} {p}")
+    return paths
+
+
+def main():
+    p = argparse.ArgumentParser(description="Denoise, diarize, identify and subtitle a recording.")
+    p.add_argument("input")
+    p.add_argument("--out", help="output folder (default: outputs/<input name>/)")
+    p.add_argument("--denoiser", choices=["deepfilternet", "spectral", "none"])
+    p.add_argument("--diarizer", choices=["pyannote", "ecapa_cluster"])
+    p.add_argument("--num-speakers", type=int)
+    p.add_argument("--min-speakers", type=int)
+    p.add_argument("--max-speakers", type=int)
+    p.add_argument("--strategy", choices=["full", "segment"])
+    p.add_argument("--language", help="e.g. en, id (default: config / auto-detect)")
+    p.add_argument("--burn", action="store_true", help="burn subtitles into the video picture")
+    args = p.parse_args()
+
+    opts = Options()
+    for k in ("denoiser", "diarizer", "num_speakers", "min_speakers", "max_speakers",
+              "strategy", "language"):
+        if getattr(args, k) is not None:
+            setattr(opts, k, getattr(args, k))
+    run_file(args.input, args.out, opts, burn=args.burn)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--session", default=str(date.today()),
-                         help="Session/class identifier, e.g. a date or class name")
-    args = parser.parse_args()
-    run(args.session)
+    main()

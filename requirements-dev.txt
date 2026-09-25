@@ -1,0 +1,8 @@
+# Lightweight set for unit tests + linting (what CI installs). The tests never
+# load a neural model, so they don't need torch & co.
+numpy>=1.24,<2
+scipy
+soundfile
+pyyaml
+pytest
+ruff

@@ -1,117 +1,82 @@
-"""Audio capture and playback.
+"""Audio/video loading, resampling, saving and mic recording.
 
-Canonical format for the whole project: 16 kHz, mono, float32 in [-1, 1].
-Convert at the boundary (this module), never in the middle of the pipeline.
+Canonical in-memory format everywhere: mono float32 numpy array in [-1, 1]
+plus an explicit sample rate. Convert at the boundary (this module), never in
+the middle of the pipeline.
+
+Decoding goes through ffmpeg so any input works (mp4, mkv, mov, mp3, m4a,
+wav...). If ffmpeg isn't on PATH we use the binary bundled with the
+`imageio-ffmpeg` pip package, so nobody on the team has to install it by hand.
 """
+import re
+import shutil
+import subprocess
+from math import gcd
+
 import numpy as np
-import sounddevice as sd
-import soundfile as sf
-
-from .config import CFG
-
-SR = CFG["audio"]["sample_rate"]
-CHANNELS = CFG["audio"]["channels"]
 
 
-def record_fixed(seconds: float) -> np.ndarray:
-    """Record a fixed-length clip. Used for enrollment prompts."""
-    n = int(seconds * SR)
-    print(f"  recording {seconds:.1f}s ...")
-    audio = sd.rec(n, samplerate=SR, channels=CHANNELS, dtype="float32")
-    sd.wait()
-    return audio.reshape(-1)
+def ffmpeg_exe() -> str:
+    exe = shutil.which("ffmpeg")
+    if exe:
+        return exe
+    import imageio_ffmpeg
+    return imageio_ffmpeg.get_ffmpeg_exe()
 
 
-def record_until_silence(max_seconds: float = 15.0) -> np.ndarray:
-    """Stream in frame_ms chunks; stop after silence_ms of trailing silence.
-    Keeps a pre-roll buffer so the first phoneme isn't clipped.
-    Requires VAD (see vad.py) — imported lazily to avoid a circular import.
-    """
-    from .vad import is_speech, FRAME_SAMPLES
-
-    frame_ms = CFG["audio"]["frame_ms"]
-    silence_ms = CFG["audio"]["silence_ms"]
-    preroll_ms = CFG["audio"]["preroll_ms"]
-    min_utt_sec = CFG["audio"]["min_utt_sec"]
-
-    preroll_frames = max(1, preroll_ms // frame_ms)
-    silence_frames_needed = max(1, silence_ms // frame_ms)
-    max_frames = int(max_seconds * 1000 / frame_ms)
-
-    ring = []              # pre-roll ring buffer (frames, always kept)
-    buf = []                # frames belonging to the current utterance
-    triggered = False
-    trailing_silence = 0
-    frames_seen = 0
-
-    print("  listening... (speak now)")
-    stream = sd.InputStream(samplerate=SR, channels=CHANNELS, dtype="float32",
-                             blocksize=FRAME_SAMPLES)
-    with stream:
-        while frames_seen < max_frames:
-            frame, _ = stream.read(FRAME_SAMPLES)
-            frame = frame.reshape(-1)
-            frames_seen += 1
-
-            speech = is_speech(frame)
-
-            if not triggered:
-                ring.append(frame)
-                if len(ring) > preroll_frames:
-                    ring.pop(0)
-                if speech:
-                    triggered = True
-                    buf.extend(ring)
-                    buf.append(frame)
-                    trailing_silence = 0
-            else:
-                buf.append(frame)
-                if speech:
-                    trailing_silence = 0
-                else:
-                    trailing_silence += 1
-                    if trailing_silence >= silence_frames_needed:
-                        break
-
-    if not buf:
-        return np.zeros(0, dtype=np.float32)
-
-    audio = np.concatenate(buf)
-    if len(audio) / SR < min_utt_sec:
-        return np.zeros(0, dtype=np.float32)
-    return audio
+def load_audio(path, sr: int) -> np.ndarray:
+    """Decode any audio/video file to mono float32 at `sr`."""
+    cmd = [ffmpeg_exe(), "-nostdin", "-hide_banner", "-loglevel", "error",
+           "-i", str(path), "-vn", "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"]
+    proc = subprocess.run(cmd, capture_output=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f"ffmpeg could not decode {path}:\n"
+                           f"{proc.stderr.decode(errors='replace')}")
+    return np.frombuffer(proc.stdout, dtype=np.float32).copy()
 
 
-def play(audio: np.ndarray, sr: int = SR):
-    sd.play(audio, samplerate=sr)
-    sd.wait()
+def has_video(path) -> bool:
+    """True if the file has a real video stream (ignores mp3 cover art)."""
+    proc = subprocess.run([ffmpeg_exe(), "-hide_banner", "-i", str(path)],
+                          capture_output=True)
+    info = proc.stderr.decode(errors="replace")
+    return any("attached pic" not in line
+               for line in re.findall(r"Stream #.*Video:.*", info))
 
 
-def save_wav(path, audio: np.ndarray, sr: int = SR):
-    sf.write(str(path), audio, sr)
+def resample(wav: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
+    if sr_in == sr_out:
+        return wav
+    from scipy.signal import resample_poly
+    g = gcd(sr_in, sr_out)
+    return resample_poly(wav, sr_out // g, sr_in // g).astype(np.float32)
 
 
-def load_wav(path) -> np.ndarray:
-    """Load a WAV and resample/convert to canonical 16k mono float32."""
-    audio, sr = sf.read(str(path), dtype="float32", always_2d=False)
-    if audio.ndim > 1:
-        audio = audio.mean(axis=1)
-    if sr != SR:
-        from scipy.signal import resample
-        n_target = int(len(audio) * SR / sr)
-        audio = resample(audio, n_target).astype(np.float32)
-    return audio
+def save_wav(path, wav: np.ndarray, sr: int):
+    import soundfile as sf
+    sf.write(str(path), np.clip(wav, -1.0, 1.0), sr, subtype="PCM_16")
 
 
-if __name__ == "__main__":
-    # Smoke test: record 3s, play it back, save to disk.
-    print("Recording 3 seconds — say something...")
-    clip = record_fixed(3.0)
-    print(f"Captured {len(clip)} samples ({len(clip)/SR:.2f}s). Playing back...")
-    play(clip)
-    out = CFG["paths"]["enroll_dir"]
-    from .config import ROOT
-    out_path = ROOT / out / "smoketest.wav"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    save_wav(out_path, clip)
-    print(f"Saved to {out_path}")
+def cut(wav: np.ndarray, sr: int, start: float, end: float) -> np.ndarray:
+    return wav[max(0, int(start * sr)):max(0, int(end * sr))]
+
+
+def record_until_enter(sr: int, max_seconds: float) -> np.ndarray:
+    """Record from the default mic until the user presses Enter (or max_seconds)."""
+    import threading
+
+    import sounddevice as sd
+
+    chunks: list[np.ndarray] = []
+    done = threading.Event()
+
+    def callback(indata, frames, time_info, status):
+        chunks.append(indata[:, 0].copy())
+        if sum(len(c) for c in chunks) >= max_seconds * sr:
+            done.set()
+
+    threading.Thread(target=lambda: (input(), done.set()), daemon=True).start()
+    with sd.InputStream(samplerate=sr, channels=1, dtype="float32", callback=callback):
+        print(f"  recording... press Enter to stop (auto-stops at {max_seconds:.0f}s)")
+        done.wait()
+    return np.concatenate(chunks) if chunks else np.zeros(0, dtype=np.float32)

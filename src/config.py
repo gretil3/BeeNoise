@@ -1,28 +1,55 @@
-"""Loads config.yaml once and exposes it as a dict. Every module imports CFG
-from here instead of re-reading the file."""
+"""Loads config.yaml once and exposes it as CFG. Every module imports from here
+instead of re-reading the file.
+
+Also loads `.env` (for HF_TOKEN) and points the HuggingFace cache at the
+project folder. Both must happen before huggingface_hub / pyannote /
+speechbrain / faster_whisper are imported anywhere, which is why this module
+is imported first by everything else.
+"""
 import os
+import warnings
 from pathlib import Path
+
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# Speaker/ASR models are pulled from the HuggingFace Hub on first use and can
-# total several hundred MB. Point the cache at this project's own drive
-# instead of the default C:\Users\<you>\.cache\huggingface — on a low-space
-# C: drive that download will otherwise fail outright. Must be set before
-# huggingface_hub/speechbrain/faster_whisper are imported anywhere, which is
-# why this lives at the top of config.py (imported first by every module).
+
+def _load_dotenv(path: Path):
+    """Minimal .env reader (KEY=VALUE lines). Real environment variables win."""
+    if not path.exists():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+_load_dotenv(ROOT / ".env")
+
+# Models total ~1-2 GB. Keep them next to the project instead of the default
+# C:\Users\<you>\.cache — on a small C: drive that download otherwise fails.
 os.environ.setdefault("HF_HOME", str(ROOT / ".cache" / "huggingface"))
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
-_CFG_PATH = ROOT / "config.yaml"
+# Library deprecation chatter that isn't actionable for us (DeepFilterNet's
+# old torchaudio import path, SpeechBrain's torch.load call).
+warnings.filterwarnings("ignore", message=r".*torchaudio\.backend\.common.*")
+warnings.filterwarnings("ignore", category=FutureWarning, message=r".*weights_only=False.*")
 
-with open(_CFG_PATH, "r", encoding="utf-8") as f:
+with open(ROOT / "config.yaml", "r", encoding="utf-8") as f:
     CFG = yaml.safe_load(f)
 
 
 def path(key: str) -> Path:
-    """Resolve a paths.* entry from config.yaml to an absolute Path,
-    creating parent directories as needed."""
+    """Resolve a paths.* entry to an absolute Path, creating its parent dir."""
     p = ROOT / CFG["paths"][key]
     p.parent.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def hf_token() -> str | None:
+    token = os.environ.get("HF_TOKEN", "").strip()
+    return token if token and not token.startswith("hf_xxx") else None

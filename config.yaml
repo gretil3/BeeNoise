@@ -1,41 +1,84 @@
-# Central config — every module reads from here, nothing hardcoded in code.
+# BeeNoise — central config. Every module reads from here; nothing tunable is
+# hardcoded in src/. Change values here (or override via CLI flags), then
+# record what you changed in your PR description so results stay reproducible.
 
 audio:
-  sample_rate: 16000        # canonical rate for the whole pipeline
-  channels: 1
-  frame_ms: 30              # VAD frame size (must be 10/20/30 for webrtcvad)
-  silence_ms: 800           # trailing silence before we stop recording
-  preroll_ms: 300           # audio kept before speech onset
-  min_utt_sec: 1.0          # reject shorter clips outright
-  vad_aggressiveness: 2     # webrtcvad 0-3, higher = more aggressive trimming
+  analysis_sr: 16000        # rate for diarization / speaker ID / Whisper
+  output_sr: 48000          # rate of the denoised output track (full-band)
 
+# --- Stage 1: denoise -------------------------------------------------------
+denoise:
+  backend: deepfilternet    # deepfilternet | spectral | none
+  #   deepfilternet — neural (DeepFilterNet3), full-band 48 kHz. Main method.
+  #   spectral      — classical spectral gating (noisereduce). Non-DL baseline.
+  #   none          — skip stage 1 entirely (used for the ablation).
+  atten_lim_db: null        # DeepFilterNet: cap noise attenuation in dB (e.g. 12)
+                            # to trade residual noise for less voice distortion.
+  spectral_prop_decrease: 0.9
+
+# Which track each downstream stage listens to. Denoising can distort voice
+# characteristics, so "denoised" is not automatically better for every stage —
+# eval/speaker_id.py and eval/der.py measure this.
+pipeline:
+  diarize_on: denoised      # denoised | raw
+  speaker_id_on: denoised   # denoised | raw
+  transcribe_on: denoised   # denoised | raw
+
+# --- Stage 2: diarization ---------------------------------------------------
+diarize:
+  backend: pyannote         # pyannote | ecapa_cluster
+  #   pyannote      — pyannote/speaker-diarization-3.1. Needs HF_TOKEN (see README).
+  #   ecapa_cluster — our own simple baseline: sliding-window ECAPA embeddings +
+  #                   agglomerative clustering. No token needed.
+  pyannote_model: "pyannote/speaker-diarization-3.1"
+  device: cpu               # cpu | cuda
+  num_speakers: null        # set it if you know it — helps a lot
+  min_speakers: null
+  max_speakers: null
+  # ecapa_cluster settings
+  window_sec: 1.5
+  hop_sec: 0.75
+  cluster_threshold: 0.6    # cosine distance cut when num_speakers is unknown
+
+# --- Stage 3: speaker ID ----------------------------------------------------
 speaker:
   model_source: "speechbrain/spkrec-ecapa-voxceleb"
   model_dir: "models/ecapa"
-  tau: 0.30                 # verification threshold — REPLACE after Phase 8 EER analysis
-  min_net_speech_sec: 1.5   # below this, don't trust the ID
+  tau: 0.35                 # accept a name only if cosine >= tau.
+                            # PLACEHOLDER — replace with the value eval/speaker_id.py recommends.
+  min_segment_sec: 1.0      # shorter diarized segments aren't embedded
+  min_cluster_speech_sec: 2.0  # a cluster with less speech than this stays "Speaker N"
+  max_embed_sec: 10.0       # long segments are cut to this before embedding
 
 enroll:
-  n_utterances: 10
-  utt_seconds: 4
-  reject_cosine: 0.5        # drop a clip if its embedding is this far from running mean
+  min_speech_sec: 20        # refuse enrollment below this much net speech
+  recommended_speech_sec: 30
+  max_record_sec: 90
+  chunk_sec: 3.0            # enrollment speech is split into chunks, one embedding each
+  reject_cosine: 0.5        # drop chunks this far from the first-pass centroid (coughs, noise)
+  vad_aggressiveness: 2     # webrtcvad 0-3
 
+# --- Stage 4: transcription -------------------------------------------------
 stt:
-  model_size: "small"       # tiny | base | small | medium
-  device: "cpu"
-  compute_type: "int8"
-  language: "en"
+  model_size: small         # tiny | base | small | medium | large-v3
+  device: cpu               # cpu | cuda
+  compute_type: int8        # int8 on CPU; float16 on GPU
+  language: null            # null = auto-detect per file; "en" / "id" pins it
   beam_size: 5
-  min_avg_logprob: -1.0     # below this, ask user to repeat
-  max_no_speech_prob: 0.6
+  strategy: full            # full    — transcribe whole track once, assign words to speakers (WhisperX-style)
+                            # segment — transcribe each diarized turn separately
 
-attendance:
-  n_digits: 4                        # length of the readback challenge, e.g. "8-2-4-9"
-  max_attempts: 2                    # failed attempts allowed before lockout kicks in
-  lockout_minutes: 15                # cooldown once max_attempts is exhausted
-  digit_edit_distance_tolerance: 0   # 0 = exact digit-string match required
+# --- Stage 5: merge -> subtitles --------------------------------------------
+subtitles:
+  max_cue_sec: 6.0
+  max_cue_chars: 84         # ~2 lines of 42 chars
+  max_gap_sec: 1.0          # a pause longer than this starts a new cue
+  label_format: "[{speaker}] {text}"
+  unknown_prefix: "Speaker" # unenrolled voices become "Speaker 1", "Speaker 2", ...
 
 paths:
   db: "data/profiles.db"
   enroll_dir: "data/enroll"
   eval_dir: "data/eval"
+  output_dir: "outputs"
+  results_dir: "eval/results"

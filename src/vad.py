@@ -1,64 +1,35 @@
-"""Voice activity detection using webrtcvad.
+"""Voice activity detection with webrtcvad (GMM-based, very fast).
 
-webrtcvad requires 16-bit PCM mono audio at 8/16/32/48 kHz, in frames of
-exactly 10/20/30 ms. We standardize on 16 kHz / 30 ms frames throughout.
+Used to strip silence from enrollment recordings and to find speech regions
+for the ecapa_cluster diarizer. webrtcvad needs 16-bit PCM at 8/16/32/48 kHz
+in frames of exactly 10/20/30 ms.
 """
 import numpy as np
-import webrtcvad
 
 from .config import CFG
 
-SR = CFG["audio"]["sample_rate"]
-FRAME_MS = CFG["audio"]["frame_ms"]
-FRAME_SAMPLES = int(SR * FRAME_MS / 1000)
-
-_vad = webrtcvad.Vad(CFG["audio"]["vad_aggressiveness"])
+FRAME_MS = 30
 
 
-def _float_to_pcm16(frame: np.ndarray) -> bytes:
-    clipped = np.clip(frame, -1.0, 1.0)
-    return (clipped * 32767).astype(np.int16).tobytes()
+def speech_mask(wav: np.ndarray, sr: int, aggressiveness: int | None = None) -> np.ndarray:
+    """One bool per 30 ms frame: True = speech."""
+    import webrtcvad
+    level = CFG["enroll"]["vad_aggressiveness"] if aggressiveness is None else aggressiveness
+    vad = webrtcvad.Vad(level)
+    n = int(sr * FRAME_MS / 1000)
+    pcm = (np.clip(wav, -1, 1) * 32767).astype(np.int16)
+    return np.array([vad.is_speech(pcm[i:i + n].tobytes(), sr)
+                     for i in range(0, len(pcm) - n + 1, n)], dtype=bool)
 
 
-def is_speech(frame: np.ndarray) -> bool:
-    """frame must be exactly FRAME_SAMPLES long, float32 in [-1, 1]."""
-    if len(frame) != FRAME_SAMPLES:
-        # pad/truncate defensively — happens on the last frame of a stream
-        if len(frame) < FRAME_SAMPLES:
-            frame = np.pad(frame, (0, FRAME_SAMPLES - len(frame)))
-        else:
-            frame = frame[:FRAME_SAMPLES]
-    return _vad.is_speech(_float_to_pcm16(frame), SR)
+def speech_only(wav: np.ndarray, sr: int) -> np.ndarray:
+    """Concatenate just the voiced frames."""
+    n = int(sr * FRAME_MS / 1000)
+    mask = speech_mask(wav, sr)
+    if not mask.any():
+        return np.zeros(0, dtype=np.float32)
+    return np.concatenate([wav[i * n:(i + 1) * n] for i in np.flatnonzero(mask)])
 
 
-def trim_silence(audio: np.ndarray) -> np.ndarray:
-    """Trim leading/trailing non-speech frames from a full utterance.
-    Used to clean up enrollment/eval clips before embedding."""
-    n_frames = len(audio) // FRAME_SAMPLES
-    if n_frames == 0:
-        return audio
-
-    flags = [is_speech(audio[i * FRAME_SAMPLES:(i + 1) * FRAME_SAMPLES])
-             for i in range(n_frames)]
-
-    if not any(flags):
-        return audio  # nothing flagged as speech — return as-is, let caller decide
-
-    first = flags.index(True)
-    last = len(flags) - 1 - flags[::-1].index(True)
-    start = first * FRAME_SAMPLES
-    end = (last + 1) * FRAME_SAMPLES
-    return audio[start:end]
-
-
-def net_speech_seconds(audio: np.ndarray) -> float:
-    """How many seconds of the clip webrtcvad flags as actual speech —
-    used to reject too-short utterances before trusting a speaker ID."""
-    n_frames = len(audio) // FRAME_SAMPLES
-    if n_frames == 0:
-        return 0.0
-    speech_frames = sum(
-        is_speech(audio[i * FRAME_SAMPLES:(i + 1) * FRAME_SAMPLES])
-        for i in range(n_frames)
-    )
-    return speech_frames * FRAME_MS / 1000.0
+def speech_seconds(wav: np.ndarray, sr: int) -> float:
+    return float(speech_mask(wav, sr).sum()) * FRAME_MS / 1000.0
