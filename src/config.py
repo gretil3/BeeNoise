@@ -34,6 +34,16 @@ _load_dotenv(ROOT / ".env")
 os.environ.setdefault("HF_HOME", str(ROOT / ".cache" / "huggingface"))
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
+# We only ever save charts to a file (fig.savefig in eval/*.py), never show
+# one interactively — force a non-interactive backend. Without this, a
+# venv/subprocess launched from inside Jupyter/Colab/VS Code inherits an
+# MPLBACKEND env var pointing at that host's *own* inline-plotting backend
+# (e.g. "module://matplotlib_inline.backend_inline"), which this project's
+# matplotlib install doesn't have and crashes on import. Override, don't
+# setdefault: the whole point is this env var is already set to something
+# that breaks here.
+os.environ["MPLBACKEND"] = "Agg"
+
 # Library deprecation chatter that isn't actionable for us (DeepFilterNet's
 # old torchaudio import path, SpeechBrain's torch.load call).
 warnings.filterwarnings("ignore", message=r".*torchaudio\.backend\.common.*")
