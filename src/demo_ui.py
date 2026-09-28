@@ -92,4 +92,10 @@ with gr.Blocks(title="BeeNoise") as demo:
 
 
 if __name__ == "__main__":
-    demo.launch()
+    import argparse
+
+    p = argparse.ArgumentParser()
+    p.add_argument("--share", action="store_true",
+                   help="expose a public URL (e.g. when running on Colab)")
+    args = p.parse_args()
+    demo.launch(share=args.share)

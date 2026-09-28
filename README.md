@@ -13,6 +13,7 @@ video/audio ─► [1] denoise ─► [2] diarize ─► [3] speaker ID ─► [
 ```
 
 - **[QUICKSTART.md](QUICKSTART.md):** the fastest path from a fresh clone to a working result. Start here if you just want to run it.
+- **[BeeNoise_Colab_Demo.ipynb](BeeNoise_Colab_Demo.ipynb):** no install at all — open in [Google Colab](https://colab.research.google.com/github/gretil3/BeeNoise/blob/main/BeeNoise_Colab_Demo.ipynb), `Runtime > Run all`, get a shareable web UI. Good for demos; not for permanent hosting (see the notebook's first cell for why).
 - **[BLUEPRINT.md](BLUEPRINT.md):** the concept, evaluation plan and design decisions. Read this first.
 - **[CONTRIBUTING.md](CONTRIBUTING.md):** how the team works together (branches, PRs, who owns what).
 - **[data/README.md](data/README.md):** what eval data to record and how to label it.
