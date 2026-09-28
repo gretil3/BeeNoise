@@ -12,6 +12,7 @@ video/audio ─► [1] denoise ─► [2] diarize ─► [3] speaker ID ─► [
                DeepFilterNet   pyannote 3.1    ECAPA-TDNN        faster-whisper   .srt/.vtt/.mp4
 ```
 
+- **[QUICKSTART.md](QUICKSTART.md):** the fastest path from a fresh clone to a working result. Start here if you just want to run it.
 - **[BLUEPRINT.md](BLUEPRINT.md):** the concept, evaluation plan and design decisions. Read this first.
 - **[CONTRIBUTING.md](CONTRIBUTING.md):** how the team works together (branches, PRs, who owns what).
 - **[data/README.md](data/README.md):** what eval data to record and how to label it.
