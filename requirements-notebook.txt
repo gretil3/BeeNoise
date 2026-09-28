@@ -1,0 +1,5 @@
+# Only needed to run BeeNoise_Local_Demo.ipynb (or the Colab notebook, which
+# installs its own copy in its own environment). Not needed for the CLI, the
+# Gradio demo, or CI -- kept out of requirements-dev.txt so those stay lean.
+notebook
+ipykernel
