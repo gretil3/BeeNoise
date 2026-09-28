@@ -7,7 +7,7 @@ Spaces has something to run; it adds no behavior of its own.
 
 See DEPLOY_SPACES.md for how to deploy this repo as a Space.
 """
-from src.demo_ui import demo
+from src.demo_ui import launch
 
 if __name__ == "__main__":
-    demo.launch()
+    launch()

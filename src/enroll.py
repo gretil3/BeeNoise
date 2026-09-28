@@ -12,6 +12,7 @@ Already have a recording? Skip the mic:
     python -m src.enroll --name Alex --file alex_reading.m4a
 """
 import argparse
+import re
 
 import numpy as np
 
@@ -72,6 +73,11 @@ def voiceprint(speech16: np.ndarray, sr: int) -> tuple[np.ndarray, int, float]:
 
 def enroll_audio(name: str, wav16: np.ndarray, sr: int, denoise: bool = False) -> profiles.Profile:
     """Shared by the CLI and the Gradio demo."""
+    # `name` becomes a folder under enroll_dir, and on a public deployment
+    # anyone can type it — reject anything that could escape that folder.
+    if not re.fullmatch(r"[\w .-]{1,64}", name) or name.strip(". ") != name:
+        raise ValueError("Name may only contain letters, digits, spaces, '.', '-' and '_', "
+                         "and can't start or end with a dot or space.")
     if denoise:
         from .audio_io import resample
         from .denoise import denoise as run_denoise

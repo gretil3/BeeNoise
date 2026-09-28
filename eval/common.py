@@ -73,6 +73,8 @@ def save_results(name: str, payload) -> Path:
 
 
 def print_table(rows: list[dict], cols: list[str]):
+    if not rows:
+        raise SystemExit("No results to report — check the eval data paths (see data/README.md).")
     widths = {c: max(len(c), *(len(_fmt(r.get(c))) for r in rows)) for c in cols}
     print("  ".join(c.ljust(widths[c]) for c in cols))
     print("  ".join("-" * widths[c] for c in cols))

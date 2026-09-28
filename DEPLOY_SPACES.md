@@ -29,6 +29,13 @@ at runtime. Nothing in the code needs to change for this — `src/config.py`
 already reads `HF_TOKEN` from the environment first, before falling back to
 a local `.env` file (which won't exist on the Space, and that's fine).
 
+**Also add a second secret, `BEENOISE_PASSWORD`** (any password you pick).
+The Space's URL is public and permanent, and the app stores voiceprints
+(biometric data), so it refuses to start on a Space without one. Visitors
+log in with user `beenoise` and that password. Share it only with the people
+you're demoing to. The Speakers tab is also hidden on a Space, so visitors
+can't see who else is enrolled.
+
 ## 3. Push this repo to the Space
 
 From your local clone of this repo (the same one you've been running):

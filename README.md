@@ -155,10 +155,10 @@ blueprint's ablation) and writes JSON + PNG charts to `eval/results/`.
 
 | Metric | Command | Needs |
 |---|---|---|
-| 1. Denoising quality (ΔSNR, ΔSI-SDR, STOI) | `python -m eval.denoise_quality` | `eval/wer/*.wav`, `eval/noise/` |
-| 2. Diarization Error Rate | `python -m eval.der` | `eval/diarization/` + labels |
-| 3. Speaker ID accuracy + false accepts, tau tuning | `python -m eval.speaker_id` | enrolled speakers + `eval/diarization/` |
-| 4. WER per noise level | `python -m eval.wer` | `eval/wer/` + `transcripts.json`, `eval/noise/` |
+| 1. Denoising quality (ΔSNR, ΔSI-SDR, STOI) | `python -m eval.denoise_quality` | `data/eval/wer/*.wav`, `data/eval/noise/` |
+| 2. Diarization Error Rate | `python -m eval.der` | `data/eval/diarization/` + labels |
+| 3. Speaker ID accuracy + false accepts, tau tuning | `python -m eval.speaker_id` | enrolled speakers + `data/eval/diarization/` |
+| 4. WER per noise level | `python -m eval.wer` | `data/eval/wer/` + `transcripts.json`, `data/eval/noise/` |
 
 Extra comparisons for the report:
 

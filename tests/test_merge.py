@@ -58,3 +58,8 @@ def test_srt_and_vtt_format():
     assert srt == "1\n00:01:01,500 --> 00:01:02,250\n[Alex] Hello\n"
     vtt = to_vtt(cues)
     assert vtt.startswith("WEBVTT\n\n00:01:01.500 --> 00:01:02.250\n<v Alex>Hello\n")
+
+
+def test_words_without_diarized_turns_get_a_generic_speaker():
+    cues = build_cues(assign_speakers([W(0.0, 0.4, " Hello")], []))
+    assert cues[0].speaker == "Speaker 1"

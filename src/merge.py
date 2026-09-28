@@ -60,7 +60,9 @@ def build_cues(words: list[Word], max_sec: float | None = None, max_chars: int |
         for p in pieces:
             text = _text(p)
             if text:
-                cues.append(Cue(p[0].start, p[-1].end, p[0].speaker or "", text, p))
+                # No diarized turns at all -> words have no speaker; don't print "[] text".
+                speaker = p[0].speaker or f"{CFG['subtitles']['unknown_prefix']} 1"
+                cues.append(Cue(p[0].start, p[-1].end, speaker, text, p))
     return cues
 
 

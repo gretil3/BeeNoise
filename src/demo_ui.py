@@ -4,9 +4,16 @@ Tabs:
   Transcribe — upload a video/audio file, run the full pipeline, get the
                denoised audio, subtitled video and subtitle files.
   Enroll     — record or upload a paragraph reading to add a speaker.
-  Speakers   — who is enrolled.
+  Speakers   — who is enrolled (hidden on a Hugging Face Space, so visitors
+               can't see each other's names).
+
+Set BEENOISE_PASSWORD to put the UI behind a login (user: beenoise). It's
+required on a Space, because the URL is public and permanent.
 """
+import os
+import shutil
 import tempfile
+import time
 from pathlib import Path
 
 import gradio as gr
@@ -16,6 +23,18 @@ from .config import CFG
 from .enroll import PARAGRAPHS, enroll_audio
 from .main import Options, run_file
 
+ON_SPACE = "SPACE_ID" in os.environ  # set by Hugging Face Spaces
+MAX_OUTPUT_AGE_SEC = 3600
+
+
+def _sweep_old_outputs():
+    """Delete result folders from earlier runs. Gradio copies the outputs it
+    serves into its own cache, so ours are only needed while a run is going."""
+    cutoff = time.time() - MAX_OUTPUT_AGE_SEC
+    for d in Path(tempfile.gettempdir()).glob("beenoise_*"):
+        if d.is_dir() and d.stat().st_mtime < cutoff:
+            shutil.rmtree(d, ignore_errors=True)
+
 
 def _transcribe(file, denoiser, diarizer, num_speakers, strategy, burn):
     if not file:
@@ -23,6 +42,7 @@ def _transcribe(file, denoiser, diarizer, num_speakers, strategy, burn):
     logs = []
     opts = Options(denoiser=denoiser, diarizer=diarizer, strategy=strategy,
                    num_speakers=int(num_speakers) if num_speakers else None)
+    _sweep_old_outputs()
     out_dir = Path(tempfile.mkdtemp(prefix="beenoise_"))
     try:
         paths = run_file(file, out_dir, opts, burn=burn, log=logs.append)
@@ -51,7 +71,8 @@ def _speakers():
             for p in profiles.get_all()]
 
 
-with gr.Blocks(title="BeeNoise") as demo:
+# delete_cache: every hour, drop Gradio's copies of uploads/results older than an hour.
+with gr.Blocks(title="BeeNoise", delete_cache=(MAX_OUTPUT_AGE_SEC, MAX_OUTPUT_AGE_SEC)) as demo:
     gr.Markdown("# BeeNoise — denoised, speaker-labelled subtitles")
     with gr.Tab("Transcribe"):
         with gr.Row():
@@ -85,10 +106,19 @@ with gr.Blocks(title="BeeNoise") as demo:
         enroll_msg = gr.Textbox(label="Result")
         enroll_btn.click(_enroll, [name, rec, den], enroll_msg)
 
-    with gr.Tab("Speakers"):
+    with gr.Tab("Speakers", visible=not ON_SPACE):
         table = gr.Dataframe(headers=["name", "speech_sec", "chunks", "spread", "enrolled"],
                              value=_speakers)
         gr.Button("Refresh").click(_speakers, None, table)
+
+
+def launch(share: bool = False):
+    """Start the UI, behind a login if BEENOISE_PASSWORD is set."""
+    password = os.environ.get("BEENOISE_PASSWORD", "").strip()
+    if ON_SPACE and not password:
+        raise SystemExit("Refusing to start on a public Space without a login: add a "
+                         "BEENOISE_PASSWORD secret in the Space's settings (see DEPLOY_SPACES.md).")
+    demo.launch(share=share, auth=("beenoise", password) if password else None)
 
 
 if __name__ == "__main__":
@@ -98,4 +128,4 @@ if __name__ == "__main__":
     p.add_argument("--share", action="store_true",
                    help="expose a public URL (e.g. when running on Colab)")
     args = p.parse_args()
-    demo.launch(share=args.share)
+    launch(share=args.share)
