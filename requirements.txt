@@ -1,9 +1,13 @@
 # Python 3.10 or 3.11 ONLY. DeepFilterNet has no Windows wheels for 3.12+
 # (pip would try to compile it from Rust source and fail).
 #
-# On Windows/CPU, install torch first from the CPU index (smaller download):
+# Locally on Windows, it's faster to install torch first, from its own CPU
+# index (smaller download than pulling it via this file's extra-index-url):
 #   pip install torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cpu
-# then: pip install -r requirements.txt
+#   pip install -r requirements.txt
+# `pip install -r requirements.txt` alone (no pre-step) also works -- that's
+# what a single-shot build (e.g. a Hugging Face Space) relies on below.
+--extra-index-url https://download.pytorch.org/whl/cpu
 
 # Deep learning runtime — pinned: pyannote 3.3, SpeechBrain 1.0 and
 # DeepFilterNet 0.5.6 are all known to work together on this version.
