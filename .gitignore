@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
+.ipynb_checkpoints/
 
 # Secrets — each teammate keeps their own HF token here
 .env
