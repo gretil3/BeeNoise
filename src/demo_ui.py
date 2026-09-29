@@ -6,14 +6,16 @@ Tabs:
                timeline, a colour-coded transcript, before/after audio, the
                subtitled video and subtitle files.
   Enroll     — record or upload a paragraph reading to add a speaker.
-  Speakers   — who is enrolled (hidden on a Hugging Face Space, so visitors
-               can't see each other's names).
+  Speakers   — who is enrolled, and deleting them (hidden on a Hugging Face
+               Space, so visitors can't see each other's names).
+  About      — what BeeNoise does and how.
 
 Set BEENOISE_PASSWORD to put the UI behind a login (user: beenoise). It's
 required on a Space, because the URL is public and permanent.
 
-Look: always-dark, Apple-style (black, grey cards, one amber accent). The
-theme variables are below; the rest of the styling is in CSS.
+Look: always-dark, Apple-style (black, grey cards, one amber accent), with the
+tabs styled as a top navbar next to the logo. The theme variables are below;
+the rest of the styling is in CSS.
 """
 import json
 import os
@@ -235,30 +237,38 @@ THEME = gr.themes.Base(
 )
 
 CSS = """
-.gradio-container { max-width: 880px !important; margin: 0 auto !important; }
+.gradio-container { width: 100% !important; max-width: 880px !important; margin: 0 auto !important; }
+.gradio-container > main { padding-top: 0 !important; }  /* tabs sit flush in the navbar */
 footer { display: none !important; }
 
-/* hero */
-#bn-hero { text-align: center; padding: 88px 16px 48px; }
-#bn-hero svg { display: block; width: 44px; height: 44px; margin: 0 auto 20px; }
-#bn-hero .eyebrow { color: #FFB300; font-size: 13px; font-weight: 600;
-  letter-spacing: .12em; text-transform: uppercase; margin: 0 0 12px; }
-#bn-hero h1 { font-size: clamp(40px, 8vw, 72px); font-weight: 700; line-height: 1.02;
-  letter-spacing: -0.035em; margin: 0; color: #F5F5F7; }
-#bn-hero h1 span { color: #FFB300; }
-#bn-hero .sub { color: #8E8E93; font-size: clamp(17px, 2.4vw, 21px); line-height: 1.4;
-  max-width: 560px; margin: 20px auto 0; }
-
-/* tabs: a centred, frosted segmented control */
-.tab-wrapper { position: sticky; top: 12px; z-index: 10; display: flex; justify-content: center;
-  margin-bottom: 32px; }
-.tab-container { display: inline-flex !important; width: auto !important; gap: 4px; padding: 4px;
-  border-radius: 980px; background: rgba(44,44,46,.72); border: none !important;
+/* navbar: a fixed frosted strip holding the logo; Gradio's tab bar is pinned on
+   top of it, right-aligned, so the tabs read as nav links */
+#bn-navwrap { position: fixed !important; inset: 0 0 auto 0; margin: 0 !important;
+  padding: 0 !important; z-index: 10; }  /* out of the layout flow: no gap above the tabs */
+#bn-nav { position: fixed; top: 0; left: 0; right: 0; height: 56px; z-index: 10;
+  background: rgba(0,0,0,.9); border-bottom: 1px solid #1C1C1E;
   backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); }
-.tab-container button { border: none !important; border-radius: 980px !important;
-  padding: 8px 20px !important; color: #8E8E93 !important; font-weight: 500; }
-.tab-container button.selected { background: #F5F5F7 !important; color: #000 !important; }
-.tab-container button.selected::after { display: none !important; }
+#bn-nav .inner { max-width: 880px; height: 100%; margin: 0 auto; padding: 0 32px;
+  display: flex; align-items: center; gap: 10px; color: #F5F5F7;
+  font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+#bn-nav svg { width: 22px; height: 22px; }
+/* fixed, not sticky: a Gradio ancestor breaks sticky, so the tabs scrolled away */
+.tab-wrapper { position: fixed !important; top: 0; left: 50%; transform: translateX(-50%);
+  width: min(880px, 100%); box-sizing: border-box; z-index: 11; height: 56px !important;
+  padding: 0 32px !important; }
+.tabs { padding-top: 96px; }  /* room for the fixed bar: 56px + 40px breathing space */
+/* Right-align only the visible strip. Gradio measures an absolutely positioned hidden
+   copy (.visually-hidden) to decide which tabs fit; any right-alignment that moves that
+   copy (including justify-content on .tab-wrapper) pushes tabs into the "…" menu. */
+.tab-container { height: 56px !important; gap: 28px; }
+.tab-container:not(.visually-hidden) { justify-content: flex-end; }
+.tab-container::after { display: none !important; }
+.tab-container button { height: 56px; padding: 0 !important; background: none !important;
+  border: none !important; color: #8E8E93 !important; font-size: 14px !important;
+  font-weight: 500 !important; }
+.tab-container button:hover, .tab-container button.selected { color: #F5F5F7 !important; }
+.tab-container button.selected::after { background: #FFB300 !important; }
+#bn-status, #bn-results { scroll-margin-top: 72px; }  /* don't land under the navbar */
 
 /* cards */
 .block { border-radius: 18px !important; }
@@ -303,27 +313,67 @@ footer { display: none !important; }
 @media (prefers-reduced-motion: reduce) { .steps li.now::before { animation: none; } }
 .bn-note { color: #8E8E93; font-size: 14px; line-height: 1.45; margin: 0; }
 
+/* about */
+.bn-about { max-width: 640px; margin: 0 auto; padding: 16px 0 64px; }
+.bn-about h2 { font-size: clamp(32px, 6vw, 48px); font-weight: 700; line-height: 1.05;
+  letter-spacing: -0.03em; margin: 0 0 16px; color: #F5F5F7; }
+.bn-about h2 span { color: #FFB300; }
+.bn-about .lead { font-size: 19px; line-height: 1.45; color: #8E8E93; margin: 0 0 40px; }
+.bn-about h3 { font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: #8E8E93; margin: 40px 0 12px; }
+.bn-about p { font-size: 16px; line-height: 1.55; color: #D1D1D6; margin: 0; }
+.bn-list { list-style: none; padding: 0 !important; margin: 0; counter-reset: step;
+  background: #1C1C1E; border-radius: 18px; }
+.bn-list li { counter-increment: step; display: grid; grid-template-columns: 24px 104px 1fr;
+  gap: 12px; padding: 16px 20px; margin: 0; border-top: 1px solid #2C2C2E; font-size: 15px; }
+.bn-list li:first-child { border-top: none; }
+.bn-list li::before { content: counter(step); color: #FFB300; font-weight: 600;
+  font-family: var(--font-mono); }
+.bn-list b { color: #F5F5F7; font-weight: 600; }
+.bn-list span { color: #8E8E93; line-height: 1.45; }
+
 .bn-quote { border-left: 3px solid #FFB300; padding: 4px 0 4px 18px; color: #D1D1D6;
   font-size: 17px; line-height: 1.55; margin: 12px 0 24px; }
 .bn-label { color: #8E8E93; font-size: 13px; font-weight: 600; letter-spacing: .06em;
   text-transform: uppercase; }
 
 @media (max-width: 600px) {
-  #bn-hero { padding-top: 56px; }
+  #bn-nav .inner span { display: none; }  /* logo mark only; the tabs need the room */
+  .tab-container { gap: 18px; }
+  .bn-list li { grid-template-columns: 24px 1fr; }
+  .bn-list span { grid-column: 2; }
   .lane { grid-template-columns: 76px 1fr; }
   .cue { grid-template-columns: 1fr; gap: 2px; }
   .steps li { font-size: 0; padding-top: 4px; }  /* bars only; the header names the step */
 }
 """
 
-HERO = """
-<div id="bn-hero">
-  <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#FFB300"
-    d="M12 1.5 21.1 6.75v10.5L12 22.5l-9.1-5.25V6.75z"/></svg>
-  <p class="eyebrow">BeeNoise</p>
-  <h1>Every voice.<br><span>Crystal clear.</span></h1>
-  <p class="sub">Drop in a noisy recording. Get clean audio and subtitles that know
-    exactly who said what.</p>
+LOGO = """<div id="bn-nav"><div class="inner"><svg viewBox="0 0 24 24" aria-hidden="true">
+  <path fill="#FFB300" d="M12 1.5 21.1 6.75v10.5L12 22.5l-9.1-5.25V6.75z"/></svg>
+  <span>BeeNoise</span></div></div>"""
+
+ABOUT = """
+<div class="bn-about">
+  <h2>Every voice.<br><span>Crystal clear.</span></h2>
+  <p class="lead">BeeNoise takes a noisy recording and gives back clean audio plus subtitles
+    that know who said what.</p>
+  <h3>How it works</h3>
+  <ol class="bn-list">
+    <li><b>Denoise</b><span>DeepFilterNet3 strips out background noise.</span></li>
+    <li><b>Diarize</b><span>pyannote works out who spoke when.</span></li>
+    <li><b>Identify</b><span>ECAPA-TDNN voiceprints put names on enrolled speakers.
+      Everyone else becomes Speaker 1, Speaker 2, …</span></li>
+    <li><b>Transcribe</b><span>Whisper turns the speech into timed words.</span></li>
+    <li><b>Subtitles</b><span>Words and speakers merge into .srt and .vtt subtitles.</span></li>
+  </ol>
+  <h3>How to use it</h3>
+  <ol class="bn-list">
+    <li><b>Enroll</b><span>Each person reads a short paragraph once, 30 to 60 seconds.</span></li>
+    <li><b>Transcribe</b><span>Upload a video or audio file, or record on the spot.</span></li>
+  </ol>
+  <h3>Private by design</h3>
+  <p>Every model runs on this computer. Nothing is sent to a cloud API, and voiceprints stay
+    in a local database that can be cleared at any time.</p>
 </div>
 """
 
@@ -333,7 +383,7 @@ FORCE_DARK = "() => { document.body.classList.add('dark'); }"
 # delete_cache: every hour, drop Gradio's copies of uploads/results older than an hour.
 with gr.Blocks(title="BeeNoise", theme=THEME, css=CSS, js=FORCE_DARK,
                delete_cache=(MAX_OUTPUT_AGE_SEC, MAX_OUTPUT_AGE_SEC)) as demo:
-    gr.HTML(HERO)
+    gr.HTML(LOGO, elem_id="bn-navwrap")
     with gr.Tab("Transcribe"):
         with gr.Row(equal_height=True):
             inp = gr.File(label="Upload video or audio", type="filepath", height=180)
@@ -398,6 +448,9 @@ with gr.Blocks(title="BeeNoise", theme=THEME, css=CSS, js=FORCE_DARK,
         delete_btn.click(_delete_speaker, who, [table, who],
                          js="(n) => n && confirm(`Delete ${n}'s voiceprint? This can't be undone.`)"
                             " ? n : null")
+
+    with gr.Tab("About"):
+        gr.HTML(ABOUT)
     demo.load(_speakers, None, [table, who])
 
 
