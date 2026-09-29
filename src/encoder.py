@@ -31,6 +31,12 @@ def _get_encoder():
             savedir=str(savedir),
             # Windows blocks symlinks without admin/Developer Mode (WinError 1314).
             local_strategy=LocalStrategy.COPY,
+            # The default "custom.py" doesn't exist in this model repo, so every load
+            # asked the Hub again and huggingface_hub re-touched an empty
+            # .cache/.../.no_exist/custom.py marker -- which `gradio app.py`'s hot
+            # reloader sees as a changed .py file, restarting the app mid-run. Pointing
+            # at a file savedir always has keeps the load fully local.
+            pymodule_file="hyperparams.yaml",
         )
     return _enc
 
