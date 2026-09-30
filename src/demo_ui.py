@@ -166,17 +166,36 @@ def _paragraph_html(lang: str) -> str:
     return f'<p class="bn-quote">{escape(PARAGRAPHS["id" if lang == "Bahasa" else "en"])}</p>'
 
 
+def _enroll_status_html(name: str, done: bool = False) -> str:
+    """Card under the Enroll button: animated waveform while working, a tick when done."""
+    icon = ('<svg class="tick" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" '
+            'stroke="currentColor" stroke-width="2.5" stroke-linecap="round" '
+            'stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg>' if done else
+            '<span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>')
+    text = f"{escape(name)} is enrolled" if done else f"Enrolling {escape(name)}…"
+    return (f'<div class="bn-enroll{" done" if done else ""}" role="status">{icon}'
+            f'<span>{text}</span></div>')
+
+
 def _enroll(name, audio_path, denoise):
+    """Generator: shows the enrolling animation while the voiceprint is computed."""
     if not name or not audio_path:
         raise gr.Error("Enter a name and record/upload audio.")
     from .audio_io import load_audio
     sr = CFG["audio"]["analysis_sr"]
+    name = name.strip()
+    yield {enroll_btn: gr.Button(interactive=False),
+           enroll_status: gr.HTML(_enroll_status_html(name), visible=True)}
     try:
-        prof = enroll_audio(name.strip(), load_audio(audio_path, sr), sr, denoise=denoise)
-    except ValueError as e:
-        raise gr.Error(str(e)) from e
+        prof = enroll_audio(name, load_audio(audio_path, sr), sr, denoise=denoise)
+    except Exception as e:  # ValueError is a user problem, anything else a crash: both end the animation
+        yield {enroll_btn: gr.Button(interactive=True), enroll_status: gr.HTML(visible=False)}
+        raise gr.Error(str(e) if isinstance(e, ValueError) else f"{type(e).__name__}: {e}") from e
     gr.Info(f"Enrolled {prof.name} ({prof.speech_sec:.0f}s of speech).")
-    return _speakers()
+    chips, choices = _speakers()
+    yield {enroll_btn: gr.Button(interactive=True),
+           enroll_status: gr.HTML(_enroll_status_html(prof.name, done=True)),
+           enrolled: chips, who: choices}
 
 
 def _speakers():
@@ -310,6 +329,25 @@ html { scroll-behavior: smooth; }
 @keyframes bn-pulse { 50% { opacity: .3; } }
 @media (prefers-reduced-motion: reduce) { .steps li.now::before { animation: none; } }
 .bn-note { color: #8E8E93; font-size: 14px; line-height: 1.45; margin: 0; }
+
+/* enroll status: waveform bars while the voiceprint is computed, a tick when done */
+.bn-enroll { display: flex; align-items: center; gap: 14px; background: #1C1C1E;
+  border-radius: 18px; padding: 16px 20px; color: #F5F5F7; font-size: 15px; font-weight: 500; }
+.bn-enroll .wave { display: flex; align-items: center; gap: 4px; height: 28px; }
+.bn-enroll .wave i { width: 4px; height: 100%; border-radius: 2px; background: #FFB300;
+  transform: scaleY(.25); animation: bn-wave 1s ease-in-out infinite; }
+.bn-enroll .wave i:nth-child(2) { animation-delay: .12s; }
+.bn-enroll .wave i:nth-child(3) { animation-delay: .24s; }
+.bn-enroll .wave i:nth-child(4) { animation-delay: .36s; }
+.bn-enroll .wave i:nth-child(5) { animation-delay: .48s; }
+@keyframes bn-wave { 50% { transform: scaleY(1); } }
+.bn-enroll .tick { width: 28px; height: 28px; color: #30D158; }
+.bn-enroll.done .tick path { stroke-dasharray: 24; animation: bn-draw .4s ease-out; }
+@keyframes bn-draw { from { stroke-dashoffset: 24; } }
+@media (prefers-reduced-motion: reduce) {
+  .bn-enroll .wave i { animation: none; transform: scaleY(.6); }
+  .bn-enroll.done .tick path { animation: none; }
+}
 
 /* one page: hero, the demo video, the pipeline under it, then enroll beside transcribe */
 .bn-hero { padding: 96px 0 32px; }  /* 56px navbar + 40px breathing space */
@@ -451,13 +489,15 @@ with gr.Blocks(title="BeeNoise", theme=THEME, css=CSS, js=FORCE_DARK,
             rec = gr.Audio(sources=["microphone", "upload"], type="filepath", label="Your reading")
             den = gr.Checkbox(label="Denoise before enrolling")
             enroll_btn = gr.Button("Enroll", variant="primary", size="lg")
+            enroll_status = gr.HTML(visible=False, padding=False)
             # Who's enrolled, and removing them: hidden on a Space, where it's public.
             enrolled = gr.HTML(visible=not ON_SPACE, padding=False)
             with gr.Accordion("Remove a speaker", open=False, visible=not ON_SPACE):
                 with gr.Row(equal_height=True):
                     who = gr.Dropdown(show_label=False, choices=[], scale=3)
                     delete_btn = gr.Button("Delete", variant="stop", scale=1)
-            enroll_btn.click(_enroll, [name, rec, den], [enrolled, who])
+            enroll_btn.click(_enroll, [name, rec, den], [enroll_btn, enroll_status, enrolled, who],
+                             show_progress="hidden")
             # Voiceprints can't be recovered, so ask first; cancelling sends None.
             delete_btn.click(
                 _delete_speaker, who, [enrolled, who],
