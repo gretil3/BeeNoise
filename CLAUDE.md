@@ -33,7 +33,7 @@ python -m eval.{denoise_quality,der,speaker_id,wer}   # metrics -> eval/results/
 ## Architecture
 
 - `src/main.py` orchestrates stages 1–5 (`run` on an in-memory waveform, `run_file` for file I/O);
-  `Options` carries per-run overrides of `config.yaml` defaults. CLI, demo UI and notebooks all go through it.
+  `Options` carries per-run overrides of `config.yaml` defaults. CLI and demo UI both go through it.
 - Stages communicate only via the dataclasses in `src/segments.py` (`Segment`, `Word`, `Cue`)
   and numpy arrays. Keep a stage's inputs/outputs the same and its internals can change freely.
 - Two sample rates: `audio.output_sr` (48 kHz) for the denoised output track, `audio.analysis_sr` (16 kHz)

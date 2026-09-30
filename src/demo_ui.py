@@ -562,6 +562,6 @@ if __name__ == "__main__":
 
     p = argparse.ArgumentParser()
     p.add_argument("--share", action="store_true",
-                   help="expose a public URL (e.g. when running on Colab)")
+                   help="expose a public URL (e.g. when running on a remote machine)")
     args = p.parse_args()
     launch(share=args.share)

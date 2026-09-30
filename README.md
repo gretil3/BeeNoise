@@ -67,12 +67,8 @@ BeeNoise is a college project for a Speech Recognition course. Try it through th
 
 ## Where to go next
 
-- **[QUICKSTART.md](QUICKSTART.md):** the fastest path from a fresh clone to a working result. Start here if you just want to run it.
-- **[BeeNoise_Local_Demo.ipynb](BeeNoise_Local_Demo.ipynb):** runs entirely on your own machine, no cloud, nothing public — calls every backend stage (denoise, diarize, speaker ID, transcribe, merge) directly, one at a time, plus the full pipeline, so you can see each stage's output on its own. Good for verifying everything works and for showing your work.
-- **[BeeNoise_Colab_Demo.ipynb](BeeNoise_Colab_Demo.ipynb):** no install at all — open in [Google Colab](https://colab.research.google.com/github/gretil3/BeeNoise/blob/main/BeeNoise_Colab_Demo.ipynb), `Runtime > Run all`, get a shareable web UI. Good for demos; not for permanent hosting (see the notebook's first cell for why).
 - **[DEPLOY_SPACES.md](DEPLOY_SPACES.md):** a real, permanent, free public deployment — Hugging Face Spaces, same UI as above, no session to keep alive.
 - **[BLUEPRINT.md](BLUEPRINT.md):** the concept, evaluation plan and design decisions. Read this first.
-- **[CONTRIBUTING.md](CONTRIBUTING.md):** how the team works together (branches, PRs, who owns what).
 - **[data/README.md](data/README.md):** what eval data to record and how to label it.
 
 ---

@@ -1,7 +1,7 @@
 # Deploying BeeNoise as a Hugging Face Space
 
-A permanent, public, free URL for the same app the Colab notebook and
-`python -m src.demo_ui` already run — no session to keep alive, no tunnel
+A permanent, public, free URL for the same app
+`python -m src.demo_ui` already runs — no session to keep alive, no tunnel
 link that expires. This is a genuine deployment, not a demo trick, but read
 [the two tradeoffs](#tradeoffs-of-the-free-tier) below before relying on it.
 
@@ -16,7 +16,7 @@ link that expires. This is a genuine deployment, not a demo trick, but read
 
 ## 2. Add your HuggingFace token as a secret
 
-Same token the local setup and Colab notebook use, for the same reason
+Same token the local setup uses, for the same reason
 (pyannote diarization is gated).
 
 1. On your new Space's page: **Settings** → **Variables and secrets** → **New secret**.
@@ -61,7 +61,7 @@ is all a Space's build step does.
 
 The Space's page shows build logs live. First build installs ~1-2GB of
 dependencies and can take several minutes — slower than your own machine,
-comparable to the Colab notebook's first run. Once it says "Running," open
+slower than a first local run. Once it says "Running," open
 the Space's URL and you'll see the same Gradio UI as the local demo:
 Transcribe, Enroll, Speakers tabs.
 
@@ -81,7 +81,7 @@ Both of these are settings you can change later from the Space's
 door.
 
 - **CPU only.** No GPU on the free tier — expect the same per-clip speed
-  you saw on the Colab demo without a GPU (minutes, not seconds). A paid
+  you'd see locally without a GPU (minutes, not seconds). A paid
   GPU tier is available in Settings → Hardware if this matters for how
   you're using it.
 - **Storage resets when the Space goes to sleep.** A CPU Space with no
@@ -100,10 +100,9 @@ Read the actual error in the Space's build log first — it's almost always
 one of:
 
 - **A missing/wrong `HF_TOKEN`** → diarization fails at runtime (not build
-  time), same fix as the Colab notebook: check the secret is set and that
+  time), check the secret is set and that
   the account behind it accepted both gated pyannote model pages.
 - **Out of memory during build or at runtime** → CPU basic is 16GB, which
   should be enough; if it isn't, that's a Settings → Hardware upgrade, not a
   code problem.
-- Anything else → paste the log here and we'll debug it the same way we
-  debugged the Colab notebook.
+- Anything else → paste the log here and we'll debug it from there.
