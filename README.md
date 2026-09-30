@@ -29,6 +29,44 @@ video/audio ─► [1] denoise ─► [2] diarize ─► [3] speaker ID ─► [
                DeepFilterNet   pyannote 3.1    ECAPA-TDNN        faster-whisper   .srt/.vtt/.mp4
 ```
 
+## About
+
+Recordings made in the real world (a vlog, a lecture hall, a group chat at a café) are
+hard to transcribe: background noise hides words, and when several people talk it is
+unclear who said what. Speech-to-text alone gives you one wall of text.
+
+BeeNoise fixes both problems in one pipeline. It cleans the noise out of the audio,
+works out who is speaking and when, recognises people who have enrolled their voice,
+and transcribes the speech with Whisper. The result is a clean audio track and
+subtitles where every line carries a speaker name.
+
+**How it works**
+
+| Step | What happens | Model |
+|---|---|---|
+| 1. Denoise | Removes background noise from the audio | DeepFilterNet3 |
+| 2. Diarize | Finds who spoke when, without knowing who anyone is yet | pyannote 3.1 |
+| 3. Identify | Matches each voice against enrolled voiceprints; unknown voices become `Speaker N` | ECAPA-TDNN |
+| 4. Transcribe | Turns speech into text with word timestamps | Whisper (faster-whisper) |
+| 5. Merge | Gives each word to the speaker talking at that moment and writes the subtitles | — |
+
+**Enroll once, get names forever.** Each person reads a short paragraph aloud (30–60 s).
+BeeNoise turns the reading into a voiceprint and uses it to label that person in every
+later recording. Enrollment is text-independent, so it works for any language or content.
+
+**Private by design.** Every model runs on your own computer. Nothing is sent to a cloud
+API. Voiceprints and enrollment readings stay on disk (`data/`, git-ignored), and you can
+delete a speaker at any time.
+
+**Measured, not assumed.** The `eval/` scripts compare the pipeline with and without
+denoising, reporting denoising quality (ΔSNR, STOI), diarization error rate, speaker-ID
+accuracy and word error rate at different noise levels (see [Evaluation](#evaluation)).
+
+BeeNoise is a college project for a Speech Recognition course. Try it through the web UI
+(`python -m src.demo_ui`) or the command line (`python -m src.main recording.mp4`).
+
+## Where to go next
+
 - **[QUICKSTART.md](QUICKSTART.md):** the fastest path from a fresh clone to a working result. Start here if you just want to run it.
 - **[BeeNoise_Local_Demo.ipynb](BeeNoise_Local_Demo.ipynb):** runs entirely on your own machine, no cloud, nothing public — calls every backend stage (denoise, diarize, speaker ID, transcribe, merge) directly, one at a time, plus the full pipeline, so you can see each stage's output on its own. Good for verifying everything works and for showing your work.
 - **[BeeNoise_Colab_Demo.ipynb](BeeNoise_Colab_Demo.ipynb):** no install at all — open in [Google Colab](https://colab.research.google.com/github/gretil3/BeeNoise/blob/main/BeeNoise_Colab_Demo.ipynb), `Runtime > Run all`, get a shareable web UI. Good for demos; not for permanent hosting (see the notebook's first cell for why).
