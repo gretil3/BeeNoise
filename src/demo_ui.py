@@ -1,20 +1,21 @@
 """Local web demo: python -m src.demo_ui   (opens http://127.0.0.1:7860)
 Live-reload while editing the UI: gradio app.py
 
-Tabs:
-  Transcribe — upload a video/audio file, run the full pipeline, get a speaker
-               timeline, a colour-coded transcript, before/after audio, the
-               subtitled video and subtitle files.
-  Enroll     — record or upload a paragraph reading to add a speaker.
-  Speakers   — who is enrolled, and deleting them (hidden on a Hugging Face
-               Space, so visitors can't see each other's names).
-  About      — what BeeNoise does and how.
+One page, top to bottom (the navbar links jump to About and Features):
+  About    — hero, the demo video (assets/demo.mp4, if present) and, under it,
+             the pipeline from input to output.
+  Features — side by side. Enroll: read a paragraph to add a speaker (the
+             enrolled list and deleting are hidden on a Hugging Face Space, so
+             visitors can't see each other's names). Transcribe: upload a
+             video/audio file and run the full pipeline. The speaker timeline,
+             colour-coded transcript, before/after audio, subtitled video and
+             subtitle files appear full width below both.
 
 Set BEENOISE_PASSWORD to put the UI behind a login (user: beenoise). It's
 required on a Space, because the URL is public and permanent.
 
-Look: always-dark, Apple-style (black, grey cards, one amber accent), with the
-tabs styled as a top navbar next to the logo. The theme variables are below;
+Look: always-dark, Apple-style (black, grey cards, one amber accent), with a
+fixed top navbar. The theme variables are below;
 the rest of the styling is in CSS.
 """
 import json
@@ -37,6 +38,7 @@ from .main import Options, run_file
 
 ON_SPACE = "SPACE_ID" in os.environ  # set by Hugging Face Spaces
 MAX_OUTPUT_AGE_SEC = 3600
+DEMO_VIDEO = Path(__file__).resolve().parent.parent / "assets" / "demo.mp4"
 
 AMBER = "#FFB300"
 # One colour per speaker, in order of appearance (Apple system colours, dark variants).
@@ -160,25 +162,50 @@ def _transcribe(file, recording, denoiser, diarizer, num_speakers, strategy, bur
            out_log: "\n".join(logs)}
 
 
+def _paragraph_html(lang: str) -> str:
+    return f'<p class="bn-quote">{escape(PARAGRAPHS["id" if lang == "Bahasa" else "en"])}</p>'
+
+
+def _enroll_status_html(name: str, done: bool = False) -> str:
+    """Card under the Enroll button: animated waveform while working, a tick when done."""
+    icon = ('<svg class="tick" viewBox="0 0 24 24" aria-hidden="true"><path fill="none" '
+            'stroke="currentColor" stroke-width="2.5" stroke-linecap="round" '
+            'stroke-linejoin="round" d="M5 12.5l4.5 4.5L19 7.5"/></svg>' if done else
+            '<span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>')
+    text = f"{escape(name)} is enrolled" if done else f"Enrolling {escape(name)}…"
+    return (f'<div class="bn-enroll{" done" if done else ""}" role="status">{icon}'
+            f'<span>{text}</span></div>')
+
+
 def _enroll(name, audio_path, denoise):
+    """Generator: shows the enrolling animation while the voiceprint is computed."""
     if not name or not audio_path:
         raise gr.Error("Enter a name and record/upload audio.")
     from .audio_io import load_audio
     sr = CFG["audio"]["analysis_sr"]
+    name = name.strip()
+    yield {enroll_btn: gr.Button(interactive=False),
+           enroll_status: gr.HTML(_enroll_status_html(name), visible=True)}
     try:
-        prof = enroll_audio(name.strip(), load_audio(audio_path, sr), sr, denoise=denoise)
-    except ValueError as e:
-        raise gr.Error(str(e)) from e
-    return (f"Enrolled {prof.name}: {prof.speech_sec:.1f}s speech, {prof.n_chunks} chunks, "
-            f"spread={prof.spread:.3f}")
+        prof = enroll_audio(name, load_audio(audio_path, sr), sr, denoise=denoise)
+    except Exception as e:  # ValueError is a user problem, anything else a crash: both end the animation
+        yield {enroll_btn: gr.Button(interactive=True), enroll_status: gr.HTML(visible=False)}
+        raise gr.Error(str(e) if isinstance(e, ValueError) else f"{type(e).__name__}: {e}") from e
+    gr.Info(f"Enrolled {prof.name} ({prof.speech_sec:.0f}s of speech).")
+    chips, choices = _speakers()
+    yield {enroll_btn: gr.Button(interactive=True),
+           enroll_status: gr.HTML(_enroll_status_html(prof.name, done=True)),
+           enrolled: chips, who: choices}
 
 
 def _speakers():
-    """Table rows + a refreshed delete dropdown."""
+    """Enrolled-speaker chips + a refreshed delete dropdown."""
     ps = profiles.get_all()
-    rows = [[p.name, round(p.speech_sec, 1), p.n_chunks, round(p.spread, 3), p.created_at[:19]]
-            for p in ps]
-    return rows, gr.Dropdown(choices=[p.name for p in ps], value=None)
+    chips = "".join(f'<span class="chip">{escape(p.name)}<em>{p.speech_sec:.0f}s</em></span>'
+                    for p in ps)
+    html = (f'<div class="bn-chips"><span class="bn-label">Enrolled</span>'
+            f'{chips or "<span class=empty>No one yet</span>"}</div>')
+    return html, gr.Dropdown(choices=[p.name for p in ps], value=None)
 
 
 def _delete_speaker(name):
@@ -237,38 +264,28 @@ THEME = gr.themes.Base(
 )
 
 CSS = """
-.gradio-container { width: 100% !important; max-width: 880px !important; margin: 0 auto !important; }
-.gradio-container > main { padding-top: 0 !important; }  /* tabs sit flush in the navbar */
+.gradio-container { width: 100% !important; max-width: 1080px !important; margin: 0 auto !important; }
+.gradio-container > main { padding-top: 0 !important; }
 footer { display: none !important; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
-/* navbar: a fixed frosted strip holding the logo; Gradio's tab bar is pinned on
-   top of it, right-aligned, so the tabs read as nav links */
+/* navbar: a fixed frosted strip, logo left, in-page links right */
 #bn-navwrap { position: fixed !important; inset: 0 0 auto 0; margin: 0 !important;
-  padding: 0 !important; z-index: 10; }  /* out of the layout flow: no gap above the tabs */
+  padding: 0 !important; z-index: 10; }  /* out of the layout flow: no gap above the hero */
 #bn-nav { position: fixed; top: 0; left: 0; right: 0; height: 56px; z-index: 10;
   background: rgba(0,0,0,.9); border-bottom: 1px solid #1C1C1E;
   backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); }
-#bn-nav .inner { max-width: 880px; height: 100%; margin: 0 auto; padding: 0 32px;
-  display: flex; align-items: center; gap: 10px; color: #F5F5F7;
+#bn-nav .inner { max-width: 1080px; height: 100%; margin: 0 auto; padding: 0 32px;
+  display: flex; align-items: center; justify-content: space-between; }
+#bn-nav a { text-decoration: none; }
+#bn-nav .brand { display: flex; align-items: center; gap: 10px; color: #F5F5F7;
   font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
 #bn-nav svg { width: 22px; height: 22px; }
-/* fixed, not sticky: a Gradio ancestor breaks sticky, so the tabs scrolled away */
-.tab-wrapper { position: fixed !important; top: 0; left: 50%; transform: translateX(-50%);
-  width: min(880px, 100%); box-sizing: border-box; z-index: 11; height: 56px !important;
-  padding: 0 32px !important; }
-.tabs { padding-top: 96px; }  /* room for the fixed bar: 56px + 40px breathing space */
-/* Right-align only the visible strip. Gradio measures an absolutely positioned hidden
-   copy (.visually-hidden) to decide which tabs fit; any right-alignment that moves that
-   copy (including justify-content on .tab-wrapper) pushes tabs into the "…" menu. */
-.tab-container { height: 56px !important; gap: 28px; }
-.tab-container:not(.visually-hidden) { justify-content: flex-end; }
-.tab-container::after { display: none !important; }
-.tab-container button { height: 56px; padding: 0 !important; background: none !important;
-  border: none !important; color: #8E8E93 !important; font-size: 14px !important;
-  font-weight: 500 !important; }
-.tab-container button:hover, .tab-container button.selected { color: #F5F5F7 !important; }
-.tab-container button.selected::after { background: #FFB300 !important; }
-#bn-status, #bn-results { scroll-margin-top: 72px; }  /* don't land under the navbar */
+#bn-nav nav { display: flex; gap: 28px; }
+#bn-nav nav a { color: #8E8E93; font-size: 14px; font-weight: 500; }
+#bn-nav nav a:hover { color: #F5F5F7; }
+#bn-features, #bn-status, #bn-results { scroll-margin-top: 72px; }  /* clear the navbar */
 
 /* cards */
 .block { border-radius: 18px !important; }
@@ -313,69 +330,133 @@ footer { display: none !important; }
 @media (prefers-reduced-motion: reduce) { .steps li.now::before { animation: none; } }
 .bn-note { color: #8E8E93; font-size: 14px; line-height: 1.45; margin: 0; }
 
-/* about */
-.bn-about { max-width: 640px; margin: 0 auto; padding: 16px 0 64px; }
-.bn-about h2 { font-size: clamp(32px, 6vw, 48px); font-weight: 700; line-height: 1.05;
+/* enroll status: waveform bars while the voiceprint is computed, a tick when done */
+.bn-enroll { display: flex; align-items: center; gap: 14px; background: #1C1C1E;
+  border-radius: 18px; padding: 16px 20px; color: #F5F5F7; font-size: 15px; font-weight: 500; }
+.bn-enroll .wave { display: flex; align-items: center; gap: 4px; height: 28px; }
+.bn-enroll .wave i { width: 4px; height: 100%; border-radius: 2px; background: #FFB300;
+  transform: scaleY(.25); animation: bn-wave 1s ease-in-out infinite; }
+.bn-enroll .wave i:nth-child(2) { animation-delay: .12s; }
+.bn-enroll .wave i:nth-child(3) { animation-delay: .24s; }
+.bn-enroll .wave i:nth-child(4) { animation-delay: .36s; }
+.bn-enroll .wave i:nth-child(5) { animation-delay: .48s; }
+@keyframes bn-wave { 50% { transform: scaleY(1); } }
+.bn-enroll .tick { width: 28px; height: 28px; color: #30D158; }
+.bn-enroll.done .tick path { stroke-dasharray: 24; animation: bn-draw .4s ease-out; }
+@keyframes bn-draw { from { stroke-dashoffset: 24; } }
+@media (prefers-reduced-motion: reduce) {
+  .bn-enroll .wave i { animation: none; transform: scaleY(.6); }
+  .bn-enroll.done .tick path { animation: none; }
+}
+
+/* one page: hero, the demo video, the pipeline under it, then enroll beside transcribe */
+.bn-hero { padding: 96px 0 32px; }  /* 56px navbar + 40px breathing space */
+.bn-hero h2 { font-size: clamp(36px, 6vw, 56px); font-weight: 700; line-height: 1.05;
   letter-spacing: -0.03em; margin: 0 0 16px; color: #F5F5F7; }
-.bn-about h2 span { color: #FFB300; }
-.bn-about .lead { font-size: 19px; line-height: 1.45; color: #8E8E93; margin: 0 0 40px; }
-.bn-about h3 { font-size: 13px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
-  color: #8E8E93; margin: 40px 0 12px; }
-.bn-about p { font-size: 16px; line-height: 1.55; color: #D1D1D6; margin: 0; }
-.bn-list { list-style: none; padding: 0 !important; margin: 0; counter-reset: step;
-  background: #1C1C1E; border-radius: 18px; }
-.bn-list li { counter-increment: step; display: grid; grid-template-columns: 24px 104px 1fr;
-  gap: 12px; padding: 16px 20px; margin: 0; border-top: 1px solid #2C2C2E; font-size: 15px; }
-.bn-list li:first-child { border-top: none; }
-.bn-list li::before { content: counter(step); color: #FFB300; font-weight: 600;
-  font-family: var(--font-mono); }
-.bn-list b { color: #F5F5F7; font-weight: 600; }
-.bn-list span { color: #8E8E93; line-height: 1.45; }
+.bn-hero h2 span { color: #FFB300; }
+.bn-hero p { font-size: 19px; line-height: 1.45; color: #8E8E93; margin: 0; max-width: 560px; }
+#bn-video { border-radius: 18px !important; overflow: hidden; }
+.bn-video-ph { aspect-ratio: 16 / 9; background: #1C1C1E; border-radius: 18px; display: flex;
+  flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  color: #636366; font-size: 14px; }
+.bn-video-ph svg { width: 64px; height: 64px; }
+
+/* pipeline: a horizontal flow, input -> 5 stages -> output; vertical on narrow screens */
+.bn-flow { background: #1C1C1E; border-radius: 18px; padding: 24px 24px 28px; }
+.bn-flow ol { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px;
+  list-style: none; padding: 0 !important; margin: 0; }
+.bn-flow li { position: relative; margin: 0; padding: 0; }
+.bn-flow li:not(:last-child)::after { content: ""; position: absolute; top: 13px; left: 36px;
+  right: -4px; height: 2px; background: #2C2C2E; }  /* the connector to the next step */
+.bn-flow li > i { width: 28px; height: 28px; margin-bottom: 12px; border-radius: 50%;
+  display: grid; place-items: center; font-style: normal; font-size: 11px; font-weight: 600;
+  font-family: var(--font-mono); color: #FFB300; background: #2C2C2E; }
+.bn-flow li.io > i { background: #FFB300; color: #000; }
+.bn-flow b { display: block; color: #F5F5F7; font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.bn-flow span { display: block; color: #8E8E93; font-size: 13px; line-height: 1.4; }
+.bn-flow em { display: block; margin-top: 6px; font-style: normal; color: #636366;
+  font-size: 11px; font-family: var(--font-mono); }
+@media (max-width: 800px) {
+  .bn-flow ol { grid-template-columns: 1fr; gap: 18px; }
+  .bn-flow li { display: grid; grid-template-columns: 28px 1fr; gap: 14px; }
+  .bn-flow li > i { margin: 0; }
+  .bn-flow li:not(:last-child)::after { top: 34px; bottom: -14px; left: 13px; right: auto;
+    width: 2px; height: auto; }
+}
+
+/* features: enroll beside transcribe */
+#bn-features { margin-top: 56px; padding-top: 48px; border-top: 1px solid #1C1C1E; gap: 40px; }
+#bn-results { margin-bottom: 64px; }
+.bn-step { display: flex; gap: 14px; align-items: center; margin: 0 0 4px; }
+.bn-step > i { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid;
+  place-items: center; font-style: normal; font-weight: 700; background: #FFB300; color: #000; }
+.bn-step h3 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.01em;
+  color: #F5F5F7; }
+.bn-step p { margin: 2px 0 0; color: #8E8E93; font-size: 15px; }
 
 .bn-quote { border-left: 3px solid #FFB300; padding: 4px 0 4px 18px; color: #D1D1D6;
-  font-size: 17px; line-height: 1.55; margin: 12px 0 24px; }
+  font-size: 15px; line-height: 1.55; margin: 4px 0 8px; }
 .bn-label { color: #8E8E93; font-size: 13px; font-weight: 600; letter-spacing: .06em;
   text-transform: uppercase; }
+.bn-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.bn-chips .bn-label { margin-right: 4px; }
+.chip { background: #1C1C1E; border-radius: 980px; padding: 6px 12px; font-size: 14px;
+  color: #F5F5F7; }
+.chip em { font-style: normal; color: #636366; margin-left: 6px; font-family: var(--font-mono);
+  font-size: 12px; }
 
 @media (max-width: 600px) {
-  #bn-nav .inner span { display: none; }  /* logo mark only; the tabs need the room */
-  .tab-container { gap: 18px; }
-  .bn-list li { grid-template-columns: 24px 1fr; }
-  .bn-list span { grid-column: 2; }
+  #bn-nav .inner { padding: 0 16px; }
+  #bn-nav nav { gap: 18px; }
   .lane { grid-template-columns: 76px 1fr; }
   .cue { grid-template-columns: 1fr; gap: 2px; }
   .steps li { font-size: 0; padding-top: 4px; }  /* bars only; the header names the step */
 }
 """
 
-LOGO = """<div id="bn-nav"><div class="inner"><svg viewBox="0 0 24 24" aria-hidden="true">
-  <path fill="#FFB300" d="M12 1.5 21.1 6.75v10.5L12 22.5l-9.1-5.25V6.75z"/></svg>
-  <span>BeeNoise</span></div></div>"""
+LOGO = """<div id="bn-nav"><div class="inner">
+  <a class="brand" href="#bn-about"><svg viewBox="0 0 24 24" aria-hidden="true">
+    <path fill="#FFB300" d="M12 1.5 21.1 6.75v10.5L12 22.5l-9.1-5.25V6.75z"/></svg>BeeNoise</a>
+  <nav><a href="#bn-about">About</a><a href="#bn-features">Features</a></nav>
+</div></div>"""
 
-ABOUT = """
-<div class="bn-about">
+HERO = """
+<div class="bn-hero">
   <h2>Every voice.<br><span>Crystal clear.</span></h2>
-  <p class="lead">BeeNoise takes a noisy recording and gives back clean audio plus subtitles
-    that know who said what.</p>
-  <h3>How it works</h3>
-  <ol class="bn-list">
-    <li><b>Denoise</b><span>DeepFilterNet3 strips out background noise.</span></li>
-    <li><b>Diarize</b><span>pyannote works out who spoke when.</span></li>
-    <li><b>Identify</b><span>ECAPA-TDNN voiceprints put names on enrolled speakers.
-      Everyone else becomes Speaker 1, Speaker 2, …</span></li>
-    <li><b>Transcribe</b><span>Whisper turns the speech into timed words.</span></li>
-    <li><b>Subtitles</b><span>Words and speakers merge into .srt and .vtt subtitles.</span></li>
-  </ol>
-  <h3>How to use it</h3>
-  <ol class="bn-list">
-    <li><b>Enroll</b><span>Each person reads a short paragraph once, 30 to 60 seconds.</span></li>
-    <li><b>Transcribe</b><span>Upload a video or audio file, or record on the spot.</span></li>
-  </ol>
-  <h3>Private by design</h3>
-  <p>Every model runs on this computer. Nothing is sent to a cloud API, and voiceprints stay
-    in a local database that can be cleared at any time.</p>
+  <p>Noisy recording in. Clean audio and subtitles that know who said what, out.
+    Everything runs on this computer.</p>
 </div>
 """
+
+PIPELINE = """
+<div class="bn-flow">
+  <div class="bn-head">How it works</div>
+  <ol>
+    <li class="io"><i>IN</i><div><b>Recording</b>
+      <span>Video or audio, or the mic. Noise is fine.</span></div></li>
+    <li><i>1</i><div><b>Denoise</b><span>Strips the background noise.</span>
+      <em>DeepFilterNet3</em></div></li>
+    <li><i>2</i><div><b>Diarize</b><span>Finds who spoke when.</span>
+      <em>pyannote</em></div></li>
+    <li><i>3</i><div><b>Identify</b><span>Names enrolled voices; others become
+      Speaker 1, 2, …</span><em>ECAPA-TDNN</em></div></li>
+    <li><i>4</i><div><b>Transcribe</b><span>Turns speech into timed words.</span>
+      <em>Whisper</em></div></li>
+    <li><i>5</i><div><b>Merge</b><span>Gives each word to whoever was speaking.</span></div></li>
+    <li class="io"><i>OUT</i><div><b>Results</b>
+      <span>Clean audio, subtitles (.srt, .vtt) and a subtitled video.</span></div></li>
+  </ol>
+</div>
+"""
+
+VIDEO_PLACEHOLDER = """<div class="bn-video-ph"><svg viewBox="0 0 24 24" aria-hidden="true">
+  <circle cx="12" cy="12" r="11" fill="none" stroke="currentColor" stroke-width="1.5"/>
+  <path fill="currentColor" d="M10 8.2v7.6l6-3.8z"/></svg>Demo video coming soon</div>"""
+
+
+def _step(n: int, title: str, sub: str) -> str:
+    return f'<div class="bn-step"><i>{n}</i><div><h3>{title}</h3><p>{sub}</p></div></div>'
+
 
 # Always dark, whatever the OS setting: Gradio's dark theme is a `dark` class on <body>.
 FORCE_DARK = "() => { document.body.classList.add('dark'); }"
@@ -384,74 +465,87 @@ FORCE_DARK = "() => { document.body.classList.add('dark'); }"
 with gr.Blocks(title="BeeNoise", theme=THEME, css=CSS, js=FORCE_DARK,
                delete_cache=(MAX_OUTPUT_AGE_SEC, MAX_OUTPUT_AGE_SEC)) as demo:
     gr.HTML(LOGO, elem_id="bn-navwrap")
-    with gr.Tab("Transcribe"):
-        with gr.Row(equal_height=True):
+
+    # About: hero, the demo video, and the pipeline under it.
+    gr.HTML(HERO, elem_id="bn-about", padding=False)
+    if DEMO_VIDEO.exists():
+        gr.Video(str(DEMO_VIDEO), show_label=False, interactive=False,
+                 show_download_button=False, show_share_button=False, elem_id="bn-video")
+    else:
+        gr.HTML(VIDEO_PLACEHOLDER, padding=False)
+    gr.HTML(PIPELINE, padding=False)
+
+    # Features: enroll beside transcribe.
+    with gr.Row(elem_id="bn-features"):
+        with gr.Column(min_width=360):
+            gr.HTML(_step(1, "Enroll your voice",
+                          "Read this aloud for 30–60 seconds. Skip if you're already enrolled."),
+                    padding=False)
+            lang = gr.Radio(["English", "Bahasa"], value="English", show_label=False,
+                            container=False)
+            paragraph = gr.HTML(_paragraph_html("English"), padding=False)
+            lang.change(_paragraph_html, lang, paragraph)
+            name = gr.Textbox(label="Your name", placeholder="e.g. Alex", max_lines=1)
+            rec = gr.Audio(sources=["microphone", "upload"], type="filepath", label="Your reading")
+            den = gr.Checkbox(label="Denoise before enrolling")
+            enroll_btn = gr.Button("Enroll", variant="primary", size="lg")
+            enroll_status = gr.HTML(visible=False, padding=False)
+            # Who's enrolled, and removing them: hidden on a Space, where it's public.
+            enrolled = gr.HTML(visible=not ON_SPACE, padding=False)
+            with gr.Accordion("Remove a speaker", open=False, visible=not ON_SPACE):
+                with gr.Row(equal_height=True):
+                    who = gr.Dropdown(show_label=False, choices=[], scale=3)
+                    delete_btn = gr.Button("Delete", variant="stop", scale=1)
+            enroll_btn.click(_enroll, [name, rec, den], [enroll_btn, enroll_status, enrolled, who],
+                             show_progress="hidden")
+            # Voiceprints can't be recovered, so ask first; cancelling sends None.
+            delete_btn.click(
+                _delete_speaker, who, [enrolled, who],
+                js="(n) => n && confirm(`Delete ${n}'s voiceprint? This can't be undone.`)"
+                   " ? n : null")
+
+        with gr.Column(min_width=360):
+            gr.HTML(_step(2, "Transcribe", "Upload a video or audio file, or record one."),
+                    padding=False)
             inp = gr.File(label="Upload video or audio", type="filepath", height=180)
             mic = gr.Audio(sources=["microphone"], type="filepath", label="…or record now")
-        # Only one input at a time: a new upload clears the recording and vice versa.
-        inp.upload(lambda: None, None, mic)
-        mic.stop_recording(lambda: None, None, inp)
-        with gr.Accordion("Advanced", open=False):
-            with gr.Row():
-                denoiser = gr.Radio(["deepfilternet", "spectral", "none"],
-                                    value=CFG["denoise"]["backend"], label="Denoiser")
-                diarizer = gr.Radio(["pyannote", "ecapa_cluster"],
-                                    value=CFG["diarize"]["backend"], label="Diarizer")
-            with gr.Row():
-                strategy = gr.Radio(["full", "segment"], value=CFG["stt"]["strategy"],
-                                    label="Transcription strategy")
-                n_spk = gr.Number(label="Speakers (blank = auto)", precision=0)
-            burn = gr.Checkbox(label="Burn subtitles into the video picture")
-        go = gr.Button("Transcribe", variant="primary", size="lg", elem_id="bn-run")
-        status = gr.HTML(visible=False, elem_id="bn-status")
+            # Only one input at a time: a new upload clears the recording and vice versa.
+            inp.upload(lambda: None, None, mic)
+            mic.stop_recording(lambda: None, None, inp)
+            with gr.Accordion("Advanced", open=False):
+                with gr.Row():
+                    denoiser = gr.Radio(["deepfilternet", "spectral", "none"],
+                                        value=CFG["denoise"]["backend"], label="Denoiser")
+                    diarizer = gr.Radio(["pyannote", "ecapa_cluster"],
+                                        value=CFG["diarize"]["backend"], label="Diarizer")
+                with gr.Row():
+                    strategy = gr.Radio(["full", "segment"], value=CFG["stt"]["strategy"],
+                                        label="Transcription strategy")
+                    n_spk = gr.Number(label="Speakers (blank = auto)", precision=0)
+                burn = gr.Checkbox(label="Burn subtitles into the video picture")
+            go = gr.Button("Transcribe", variant="primary", size="lg", elem_id="bn-run")
 
-        with gr.Column(visible=False, elem_id="bn-results") as results:
-            timeline = gr.HTML()
-            transcript = gr.HTML()
-            with gr.Row(equal_height=True):
-                before = gr.Audio(label="Before", interactive=False)
-                after = gr.Audio(label="After — denoised", type="filepath", interactive=False)
-            out_video = gr.Video(label="Subtitled video", visible=False)
-            with gr.Accordion("Downloads & log", open=False):
-                out_files = gr.File(label="Subtitles & data", file_count="multiple")
-                out_log = gr.Textbox(label="Log", lines=8, show_label=False)
-        outputs = [go, status, results, timeline, transcript, before, after, out_video,
-                   out_files, out_log]
-        # Scroll the loading card, then the results, into view: both land below the fold.
-        scroll = ("() => setTimeout(() => document.getElementById('{}')"
-                  "?.scrollIntoView({{behavior: 'smooth', block: 'start'}}), 300)")
-        go.click(None, js=scroll.format("bn-status"))
-        go.click(_transcribe, [inp, mic, denoiser, diarizer, n_spk, strategy, burn], outputs,
-                 show_progress="hidden").success(None, js=scroll.format("bn-results"))
-
-    with gr.Tab("Enroll"):
-        gr.HTML('<p class="bn-label">Read this aloud — 30 to 60 seconds, somewhere quiet</p>'
-                f'<p class="bn-quote">{escape(PARAGRAPHS["en"])}</p>'
-                '<p class="bn-label">Bahasa Indonesia</p>'
-                f'<p class="bn-quote">{escape(PARAGRAPHS["id"])}</p>')
-        name = gr.Textbox(label="Name", placeholder="e.g. Alex")
-        rec = gr.Audio(sources=["microphone", "upload"], type="filepath", label="Reading")
-        den = gr.Checkbox(label="Denoise before enrolling")
-        enroll_btn = gr.Button("Enroll", variant="primary", size="lg")
-        enroll_msg = gr.Textbox(label="Result")
-        enroll_btn.click(_enroll, [name, rec, den], enroll_msg)
-
-    with gr.Tab("Speakers", visible=not ON_SPACE) as speakers_tab:
-        table = gr.Dataframe(headers=["name", "speech_sec", "chunks", "spread", "enrolled"])
+    # Progress and results span the full width, under both columns.
+    status = gr.HTML(visible=False, elem_id="bn-status")
+    with gr.Column(visible=False, elem_id="bn-results") as results:
+        timeline = gr.HTML()
+        transcript = gr.HTML()
         with gr.Row(equal_height=True):
-            who = gr.Dropdown(label="Remove a speaker", choices=[], scale=3)
-            delete_btn = gr.Button("Delete", variant="stop", scale=1)
-        refresh = gr.Button("Refresh", size="sm")
-        speakers_tab.select(_speakers, None, [table, who])
-        refresh.click(_speakers, None, [table, who])
-        # Voiceprints can't be recovered, so ask first; cancelling sends None.
-        delete_btn.click(_delete_speaker, who, [table, who],
-                         js="(n) => n && confirm(`Delete ${n}'s voiceprint? This can't be undone.`)"
-                            " ? n : null")
-
-    with gr.Tab("About"):
-        gr.HTML(ABOUT)
-    demo.load(_speakers, None, [table, who])
+            before = gr.Audio(label="Before", interactive=False)
+            after = gr.Audio(label="After — denoised", type="filepath", interactive=False)
+        out_video = gr.Video(label="Subtitled video", visible=False)
+        with gr.Accordion("Downloads & log", open=False):
+            out_files = gr.File(label="Subtitles & data", file_count="multiple")
+            out_log = gr.Textbox(label="Log", lines=8, show_label=False)
+    outputs = [go, status, results, timeline, transcript, before, after, out_video,
+               out_files, out_log]
+    # Scroll the loading card, then the results, into view: both land below the fold.
+    scroll = ("() => setTimeout(() => document.getElementById('{}')"
+              "?.scrollIntoView({{behavior: 'smooth', block: 'start'}}), 300)")
+    go.click(None, js=scroll.format("bn-status"))
+    go.click(_transcribe, [inp, mic, denoiser, diarizer, n_spk, strategy, burn], outputs,
+             show_progress="hidden").success(None, js=scroll.format("bn-results"))
+    demo.load(_speakers, None, [enrolled, who])
 
 
 def launch(share: bool = False):
