@@ -60,6 +60,17 @@ def path(key: str) -> Path:
     return p
 
 
+def resolve_device(value: str | None) -> str:
+    """"auto" (or None) -> "cuda" when a GPU is usable, else "cpu"; anything else as given."""
+    if value not in (None, "auto"):
+        return value
+    try:
+        import torch
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    except ImportError:
+        return "cpu"
+
+
 def hf_token() -> str | None:
     token = os.environ.get("HF_TOKEN", "").strip()
     return token if token and not token.startswith("hf_xxx") else None

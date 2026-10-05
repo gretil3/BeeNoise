@@ -40,11 +40,12 @@ python -m eval.{denoise_quality,der,speaker_id,wer}   # metrics -> eval/results/
   for diarization/speaker ID/Whisper. `pipeline.*_on` in config chooses raw vs denoised track per stage (ablation).
 - Speaker ID (`src/speaker_id.py`): per-cluster duration-weighted ECAPA voiceprint, cosine vs enrolled
   centroids, one-to-one Hungarian assignment, accepted only if cosine ≥ `speaker.tau`;
-  otherwise "Speaker N". Embeddings are L2-normalised in `src/encoder.py`, so cosine is a dot product.
+  otherwise "Speaker N". Clusters whose voiceprints have cosine ≥ `speaker.merge_cosine` are first
+  merged into one speaker (diarizers often split a single voice in two). Embeddings are L2-normalised in `src/encoder.py`, so cosine is a dot product.
 - Enrolled voiceprints live in SQLite `data/profiles.db` (`src/profiles.py`), gitignored biometric data.
 - Merge (`src/merge.py`) assigns speakers per word by max overlap with diarized turns (WhisperX-style),
   then groups words into cues.
-- `src/demo_ui.py` defines the Gradio `demo`; `app.py` is the Hugging Face Spaces entry point.
+- `src/demo_ui.py` defines the Gradio `demo`; `app.py` is the `gradio app.py` hot-reload entry point.
   On a Space (`SPACE_ID` set) the UI refuses to start without `BEENOISE_PASSWORD`, and the Speakers tab is hidden.
 
 ## Conventions

@@ -8,10 +8,12 @@ than the reference implementation. `word_timestamps=True` aligns each word
 using the decoder's cross-attention — that's what lets us attach a speaker to
 every word in stage 5.
 """
+import os
+
 import numpy as np
 
 from .audio_io import cut
-from .config import CFG
+from .config import CFG, resolve_device
 from .segments import Segment, Word, merge_adjacent
 
 _model = None
@@ -21,20 +23,28 @@ def _get_model():
     global _model
     if _model is None:
         from faster_whisper import WhisperModel
-        size = CFG["stt"]["model_size"]
-        print(f"Loading Whisper '{size}' (first run downloads the model)...")
-        _model = WhisperModel(size, device=CFG["stt"]["device"],
-                              compute_type=CFG["stt"]["compute_type"])
+        cfg = CFG["stt"]
+        size, device = cfg["model_size"], resolve_device(cfg["device"])
+        compute = cfg["compute_type"]
+        if compute == "auto":
+            compute = "float16" if device == "cuda" else "int8"
+        print(f"Loading Whisper '{size}' on {device} ({compute}); first run downloads the model...")
+        _model = WhisperModel(size, device=device, compute_type=compute,
+                              cpu_threads=cfg["cpu_threads"] or os.cpu_count() or 4)
     return _model
 
 
 def transcribe_words(wav16: np.ndarray, language: str | None = None,
                      offset: float = 0.0, speaker: str | None = None) -> tuple[list[Word], str]:
     """Returns (words with absolute timestamps, detected language)."""
+    cfg = CFG["stt"]
     segments, info = _get_model().transcribe(
         wav16,
-        language=language or CFG["stt"]["language"],
-        beam_size=CFG["stt"]["beam_size"],
+        language=language or cfg["language"],
+        beam_size=cfg["beam_size"],
+        condition_on_previous_text=cfg["condition_on_previous_text"],
+        hallucination_silence_threshold=cfg["hallucination_silence_threshold"],
+        initial_prompt=cfg["initial_prompt"],
         vad_filter=True,
         word_timestamps=True,
     )

@@ -1,20 +1,3 @@
----
-title: BeeNoise
-emoji: 🐝
-colorFrom: yellow
-colorTo: gray
-sdk: gradio
-sdk_version: 5.50.0
-app_file: app.py
-python_version: "3.10"
-pinned: false
----
-
-<!-- The block above is Hugging Face Spaces configuration metadata, read
-     directly from this file when this repo is deployed as a Space -- see
-     DEPLOY_SPACES.md. It's harmless here; GitHub just renders it as plain
-     text at the top of this page. -->
-
 # BeeNoise — Multi-Speaker Denoised Transcription
 
 Give it a noisy recording (vlog, lecture, group conversation). It returns:
@@ -67,7 +50,6 @@ BeeNoise is a college project for a Speech Recognition course. Try it through th
 
 ## Where to go next
 
-- **[DEPLOY_SPACES.md](DEPLOY_SPACES.md):** a real, permanent, free public deployment — Hugging Face Spaces, same UI as above, no session to keep alive.
 - **[BLUEPRINT.md](BLUEPRINT.md):** the concept, evaluation plan and design decisions. Read this first.
 - **[data/README.md](data/README.md):** what eval data to record and how to label it.
 

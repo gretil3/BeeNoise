@@ -273,7 +273,9 @@ html { scroll-behavior: smooth; }
 /* navbar: a fixed frosted strip, logo left, in-page links right */
 #bn-navwrap { position: fixed !important; inset: 0 0 auto 0; margin: 0 !important;
   padding: 0 !important; z-index: 10; }  /* out of the layout flow: no gap above the hero */
-#bn-nav { position: fixed; top: 0; left: 0; right: 0; height: 56px; z-index: 10;
+#bn-navwrap { pointer-events: none; }
+#bn-navwrap .empty { display: none !important; }
+#bn-nav { pointer-events: auto; position: fixed; top: 0; left: 0; right: 0; height: 56px; z-index: 10;
   background: rgba(0,0,0,.9); border-bottom: 1px solid #1C1C1E;
   backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); }
 #bn-nav .inner { max-width: 1080px; height: 100%; margin: 0 auto; padding: 0 32px;
@@ -405,6 +407,127 @@ html { scroll-behavior: smooth; }
 .chip em { font-style: normal; color: #636366; margin-left: 6px; font-family: var(--font-mono);
   font-size: 12px; }
 
+/* ---- forms: one card per feature, and buttons that look like buttons ---- */
+.bn-cta { display: inline-flex; align-items: center; gap: 8px; margin-top: 28px;
+  padding: 12px 24px; border-radius: 980px; background: #FFB300; color: #000 !important;
+  font-size: 16px; font-weight: 600; text-decoration: none !important;
+  transition: transform .15s ease, background .15s ease; }
+.bn-cta:hover { background: #FFC53D; transform: translateY(-1px); }
+.bn-cta svg { width: 18px; height: 18px; }
+
+.bn-form { background: #111113 !important; border: 1px solid #2C2C2E !important;
+  border-radius: 20px !important; padding: 20px !important; gap: 18px !important; }
+/* fields sit flat on the card instead of each being its own grey box */
+.bn-form .block { background: transparent !important; border: 0 !important;
+  box-shadow: none !important; padding: 0 !important; }
+.bn-form .form { background: transparent !important; border: 0 !important;
+  box-shadow: none !important; gap: 18px !important; }
+.bn-form .block:has(> .label-wrap) { overflow: hidden !important; }  /* accordions */
+.bn-form .label-wrap { padding: 12px 0 !important; font-weight: 600; color: #F5F5F7;
+  border-top: 1px solid #2C2C2E; }
+.bn-form label[data-testid="block-label"] { position: static !important; display: flex;
+  background: transparent !important; border: 0 !important; box-shadow: none !important;
+  padding: 0 0 10px !important; color: #8E8E93 !important; font-size: 12px; font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase; }
+.bn-form label[data-testid="block-label"] > span { display: none; }  /* its icon */
+.bn-form [data-testid="block-info"] { color: #8E8E93 !important; font-size: 12px;
+  font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+.bn-form input[type="text"], .bn-form input[type="number"], .bn-form textarea {
+  background: #1C1C1E !important; border: 1px solid #3A3A3C !important;
+  border-radius: 12px !important; padding: 12px 14px !important; font-size: 16px; }
+.bn-form input[type="text"]:focus, .bn-form input[type="number"]:focus, .bn-form textarea:focus {
+  border-color: #FFB300 !important; box-shadow: 0 0 0 3px rgba(255,179,0,.18) !important; }
+.bn-form input[type="checkbox"] { width: 22px; height: 22px; border-radius: 7px;
+  border: 2px solid #8E8E93 !important; background-color: transparent; cursor: pointer; }
+.bn-form input[type="checkbox"]:hover { border-color: #FFB300 !important; }
+.bn-form input[type="checkbox"]:checked { background-color: #FFB300 !important;
+  border-color: #FFB300 !important; }
+.bn-form .block label:has(> input[type="checkbox"]) { cursor: pointer; gap: 12px;
+  font-size: 15px; font-weight: 500; }
+.bn-form .info { color: #8E8E93; font-size: 13px; padding-left: 34px; }  /* under the label text */
+
+/* recorder: Record is an outlined amber pill, Stop a solid red one */
+.bn-form .audio-container { background: #1C1C1E; border: 1px solid #3A3A3C;
+  border-radius: 16px; padding: 14px; gap: 12px; }
+.bn-form .controls { display: flex !important; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; }
+.bn-form .controls .wrapper { display: flex; align-items: center; gap: 8px; }
+.bn-form .record-button, .bn-form .stop-button, .bn-form .stop-button-paused,
+.bn-form .resume-button { align-items: center; gap: 10px; width: auto !important;
+  height: 44px; padding: 0 22px !important; margin: 0 !important; border-radius: 980px !important;
+  cursor: pointer; font-size: 15px; font-weight: 600; white-space: nowrap;
+  transition: transform .15s ease, background .15s ease; }
+.bn-form .record-button { border: 1.5px solid #FFB300 !important; color: #FFB300 !important;
+  background: rgba(255,179,0,.12) !important; }
+.bn-form .record-button:hover { background: rgba(255,179,0,.24) !important;
+  transform: translateY(-1px); }
+.bn-form .record-button::before, .bn-form .stop-button::before,
+.bn-form .stop-button-paused::before { flex: none; width: 10px !important; height: 10px !important;
+  margin: 0 !important; }
+.bn-form .record-button::before { background: #FF453A !important;
+  box-shadow: 0 0 0 3px rgba(255,69,58,.28); }
+.bn-form .stop-button::before, .bn-form .stop-button-paused::before { background: #fff !important; }
+.bn-form .stop-button, .bn-form .stop-button-paused { border: 0 !important; color: #fff !important;
+  background: #FF453A !important; }
+.bn-form .stop-button:hover, .bn-form .stop-button-paused:hover { background: #FF6259 !important; }
+.bn-form .resume-button { border: 1.5px solid #636366 !important; color: #F5F5F7 !important;
+  background: #2C2C2E !important; }
+.bn-form .record-button:active, .bn-form .stop-button:active { transform: scale(.97); }
+.bn-form .mic-select { height: 44px; max-width: 52%; padding: 0 14px; border-radius: 12px;
+  border: 1px solid #3A3A3C; background: #2C2C2E; color: #F5F5F7; font-size: 14px;
+  text-overflow: ellipsis; cursor: pointer; }
+.bn-form .mic-select:hover { border-color: #636366; }
+/* Upload / Microphone toggle: labelled, instead of two bare icons */
+.bn-form .source-selection { display: flex !important; justify-content: center; gap: 4px;
+  width: fit-content; margin: 2px auto 0; padding: 4px !important; border-radius: 980px;
+  background: #111113; border: 1px solid #2C2C2E; }
+.bn-form .source-selection button { display: inline-flex; align-items: center; gap: 8px;
+  width: auto !important; height: 34px; padding: 0 16px !important; border-radius: 980px !important;
+  color: #8E8E93; font-size: 13px; font-weight: 600; cursor: pointer; }
+.bn-form .source-selection button svg { width: 16px !important; height: 16px !important; }
+.bn-form .source-selection button:hover { color: #F5F5F7; }
+.bn-form .source-selection button.selected { background: rgba(255,179,0,.16) !important;
+  color: #FFB300 !important; }
+.bn-form .source-selection button[aria-label="Upload file"]::after { content: "Upload"; }
+.bn-form .source-selection button[aria-label="Record audio"]::after { content: "Microphone"; }
+
+/* upload drop zone, with a visible Browse button */
+.bn-form button[aria-label^="Click to upload"] { border: 2px dashed #48484A !important;
+  border-radius: 16px !important; background: #1C1C1E !important; cursor: pointer;
+  transition: border-color .15s ease, background .15s ease; }
+.bn-form button[aria-label^="Click to upload"]:hover { border-color: #FFB300 !important;
+  background: rgba(255,179,0,.06) !important; }
+.bn-form button[aria-label^="Click to upload"] .wrap::after { content: "Browse files";
+  display: inline-block; margin-top: 14px; padding: 9px 20px; border-radius: 980px;
+  border: 1.5px solid #FFB300; background: rgba(255,179,0,.12); color: #FFB300;
+  font-size: 14px; font-weight: 600; }
+
+/* main actions */
+#bn-enroll, #bn-run, #bn-delete { display: inline-flex !important; align-items: center;
+  justify-content: center; gap: 10px; min-height: 52px; font-size: 17px !important;
+  font-weight: 600 !important; cursor: pointer;
+  transition: transform .15s ease, background .15s ease, box-shadow .15s ease; }
+#bn-enroll, #bn-run { box-shadow: 0 4px 16px rgba(255,179,0,.18) !important; }
+#bn-enroll:hover, #bn-run:hover { transform: translateY(-1px);
+  box-shadow: 0 6px 22px rgba(255,179,0,.32) !important; }
+#bn-enroll:active, #bn-run:active, #bn-delete:active { transform: scale(.98); }
+#bn-enroll:focus-visible, #bn-run:focus-visible, .bn-cta:focus-visible,
+.bn-form button:focus-visible { outline: 3px solid rgba(255,179,0,.55); outline-offset: 2px; }
+#bn-enroll:disabled, #bn-run:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+#bn-delete { min-height: 44px; font-size: 15px !important; background: transparent !important;
+  border: 1.5px solid rgba(255,69,58,.55) !important; color: #FF453A !important; }
+#bn-delete:hover { background: rgba(255,69,58,.12) !important; }
+#bn-enroll::before, #bn-run::before, #bn-delete::before { content: ""; width: 20px; height: 20px;
+  background: currentColor; -webkit-mask: var(--ico) center / contain no-repeat;
+  mask: var(--ico) center / contain no-repeat; }
+#bn-enroll { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z'/%3E%3Cpath d='M19 10v2a7 7 0 0 1-14 0v-2M12 19v3'/%3E%3C/svg%3E"); }
+#bn-run { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpath d='M14 2v6h6M8 13h8M8 17h8'/%3E%3C/svg%3E"); }
+#bn-delete { --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2'/%3E%3C/svg%3E"); }
+@media (prefers-reduced-motion: reduce) {
+  .bn-cta, .bn-form button, #bn-enroll, #bn-run, #bn-delete { transition: none; }
+  .bn-cta:hover, #bn-enroll:hover, #bn-run:hover, .bn-form .record-button:hover { transform: none; }
+}
+
 @media (max-width: 600px) {
   #bn-nav .inner { padding: 0 16px; }
   #bn-nav nav { gap: 18px; }
@@ -425,6 +548,9 @@ HERO = """
   <h2>Every voice.<br><span>Crystal clear.</span></h2>
   <p>Noisy recording in. Clean audio and subtitles that know who said what, out.
     Everything runs on this computer.</p>
+  <a class="bn-cta" href="#bn-features">Try it now
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12l7 7 7-7" fill="none"
+      stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
 </div>
 """
 
@@ -469,7 +595,7 @@ with gr.Blocks(title="BeeNoise", theme=THEME, css=CSS, js=FORCE_DARK,
     # About: hero, the demo video, and the pipeline under it.
     gr.HTML(HERO, elem_id="bn-about", padding=False)
     if DEMO_VIDEO.exists():
-        gr.Video(str(DEMO_VIDEO), show_label=False, interactive=False,
+        gr.Video(str(DEMO_VIDEO), show_label=False, interactive=False, autoplay=True,
                  show_download_button=False, show_share_button=False, elem_id="bn-video")
     else:
         gr.HTML(VIDEO_PLACEHOLDER, padding=False)
@@ -481,21 +607,24 @@ with gr.Blocks(title="BeeNoise", theme=THEME, css=CSS, js=FORCE_DARK,
             gr.HTML(_step(1, "Enroll your voice",
                           "Read this aloud for 30–60 seconds. Skip if you're already enrolled."),
                     padding=False)
-            lang = gr.Radio(["English", "Bahasa"], value="English", show_label=False,
-                            container=False)
-            paragraph = gr.HTML(_paragraph_html("English"), padding=False)
-            lang.change(_paragraph_html, lang, paragraph)
-            name = gr.Textbox(label="Your name", placeholder="e.g. Alex", max_lines=1)
-            rec = gr.Audio(sources=["microphone", "upload"], type="filepath", label="Your reading")
-            den = gr.Checkbox(label="Denoise before enrolling")
-            enroll_btn = gr.Button("Enroll", variant="primary", size="lg")
+            with gr.Column(elem_classes="bn-form", elem_id="bn-enroll-form"):
+                lang = gr.Radio(["English", "Bahasa"], value="English", show_label=False,
+                                container=False)
+                paragraph = gr.HTML(_paragraph_html("English"), padding=False)
+                lang.change(_paragraph_html, lang, paragraph)
+                name = gr.Textbox(label="Your name", placeholder="e.g. Alex", max_lines=1)
+                rec = gr.Audio(sources=["microphone", "upload"], type="filepath",
+                               label="Your reading")
+                den = gr.Checkbox(label="Denoise before enrolling",
+                                  info="Tick this if you recorded somewhere noisy.")
+                enroll_btn = gr.Button("Enroll", variant="primary", size="lg", elem_id="bn-enroll")
             enroll_status = gr.HTML(visible=False, padding=False)
             # Who's enrolled, and removing them: hidden on a Space, where it's public.
             enrolled = gr.HTML(visible=not ON_SPACE, padding=False)
             with gr.Accordion("Remove a speaker", open=False, visible=not ON_SPACE):
                 with gr.Row(equal_height=True):
                     who = gr.Dropdown(show_label=False, choices=[], scale=3)
-                    delete_btn = gr.Button("Delete", variant="stop", scale=1)
+                    delete_btn = gr.Button("Delete", variant="stop", scale=1, elem_id="bn-delete")
             enroll_btn.click(_enroll, [name, rec, den], [enroll_btn, enroll_status, enrolled, who],
                              show_progress="hidden")
             # Voiceprints can't be recovered, so ask first; cancelling sends None.
@@ -507,23 +636,24 @@ with gr.Blocks(title="BeeNoise", theme=THEME, css=CSS, js=FORCE_DARK,
         with gr.Column(min_width=360):
             gr.HTML(_step(2, "Transcribe", "Upload a video or audio file, or record one."),
                     padding=False)
-            inp = gr.File(label="Upload video or audio", type="filepath", height=180)
-            mic = gr.Audio(sources=["microphone"], type="filepath", label="…or record now")
-            # Only one input at a time: a new upload clears the recording and vice versa.
-            inp.upload(lambda: None, None, mic)
-            mic.stop_recording(lambda: None, None, inp)
-            with gr.Accordion("Advanced", open=False):
-                with gr.Row():
-                    denoiser = gr.Radio(["deepfilternet", "spectral", "none"],
-                                        value=CFG["denoise"]["backend"], label="Denoiser")
-                    diarizer = gr.Radio(["pyannote", "ecapa_cluster"],
-                                        value=CFG["diarize"]["backend"], label="Diarizer")
-                with gr.Row():
-                    strategy = gr.Radio(["full", "segment"], value=CFG["stt"]["strategy"],
-                                        label="Transcription strategy")
-                    n_spk = gr.Number(label="Speakers (blank = auto)", precision=0)
-                burn = gr.Checkbox(label="Burn subtitles into the video picture")
-            go = gr.Button("Transcribe", variant="primary", size="lg", elem_id="bn-run")
+            with gr.Column(elem_classes="bn-form", elem_id="bn-transcribe-form"):
+                inp = gr.File(label="Upload video or audio", type="filepath", height=180)
+                mic = gr.Audio(sources=["microphone"], type="filepath", label="…or record now")
+                # Only one input at a time: a new upload clears the recording and vice versa.
+                inp.upload(lambda: None, None, mic)
+                mic.stop_recording(lambda: None, None, inp)
+                with gr.Accordion("Advanced", open=False):
+                    with gr.Row():
+                        denoiser = gr.Radio(["deepfilternet", "spectral", "none"],
+                                            value=CFG["denoise"]["backend"], label="Denoiser")
+                        diarizer = gr.Radio(["pyannote", "ecapa_cluster"],
+                                            value=CFG["diarize"]["backend"], label="Diarizer")
+                    with gr.Row():
+                        strategy = gr.Radio(["full", "segment"], value=CFG["stt"]["strategy"],
+                                            label="Transcription strategy")
+                        n_spk = gr.Number(label="Speakers (blank = auto)", precision=0)
+                    burn = gr.Checkbox(label="Burn subtitles into the video picture")
+                go = gr.Button("Transcribe", variant="primary", size="lg", elem_id="bn-run")
 
     # Progress and results span the full width, under both columns.
     status = gr.HTML(visible=False, elem_id="bn-status")
@@ -553,7 +683,7 @@ def launch(share: bool = False):
     password = os.environ.get("BEENOISE_PASSWORD", "").strip()
     if ON_SPACE and not password:
         raise SystemExit("Refusing to start on a public Space without a login: add a "
-                         "BEENOISE_PASSWORD secret in the Space's settings (see DEPLOY_SPACES.md).")
+                         "BEENOISE_PASSWORD secret in the Space's settings.")
     demo.launch(share=share, auth=("beenoise", password) if password else None)
 
 
