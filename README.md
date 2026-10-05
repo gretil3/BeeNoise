@@ -109,6 +109,32 @@ python -m pytest
 
 ---
 
+## Run locally
+
+After the one-time setup above, start the demo UI from the repo root:
+
+```bash
+.venv\Scripts\activate
+```
+```bash
+python -m src.demo_ui
+```
+
+Then open http://127.0.0.1:7860 in your browser. Stop it with `Ctrl+C`.
+
+- **Activate the venv first.** Plain `python` may point at a different install
+  (e.g. 3.7) and fail with `No module named 'yaml'`. Without activating, run
+  `.venv\Scripts\python.exe -m src.demo_ui` (macOS/Linux: `.venv/bin/python`).
+- **Hot reload while editing the UI:** `gradio app.py` serves the same UI and
+  restarts on file save.
+- **No HF token?** The UI still works with the `ecapa_cluster` diarizer; pyannote
+  needs the token from step 3.
+- The first run downloads models into `.cache/` and `models/`, so the first
+  launch and first clip are slow.
+- To skip the UI and use the command line, see [Usage](#usage).
+
+---
+
 ## Usage
 
 **Enroll each speaker** (reads a paragraph aloud, ~30–60 s):
