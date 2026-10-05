@@ -139,7 +139,9 @@ def run_file(input_path, out_dir=None, opts: Options | None = None, burn: bool =
         paths["video"] = mux(input_path, paths["denoised"], paths["srt"],
                              out_dir / f"{input_path.stem}_subtitled.mp4", burn=burn)
 
-    log(f"\nDone in {sum(res.timings.values()):.1f}s -> {out_dir}")
+    total = sum(res.timings.values())
+    log(f"\nDone in {total:.1f}s ({total / (len(raw) / sr):.2f}x real time) -> {out_dir}")
+    log("  " + ", ".join(f"{k} {v:.1f}s" for k, v in res.timings.items()))
     for k, p in paths.items():
         log(f"  {k:<9} {p}")
     return paths

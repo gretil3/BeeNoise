@@ -18,7 +18,7 @@ ecapa_cluster  Our own baseline, same idea minus the neural segmenter: VAD ->
 """
 import numpy as np
 
-from .config import CFG, hf_token
+from .config import CFG, hf_token, resolve_device
 from .segments import Segment, merge_adjacent
 
 BACKENDS = ("pyannote", "ecapa_cluster")
@@ -49,7 +49,7 @@ def _get_pyannote():
                 f"Could not load {name}. Make sure you accepted the user conditions "
                 "on huggingface.co for both pyannote/speaker-diarization-3.1 and "
                 "pyannote/segmentation-3.0 with the account that owns HF_TOKEN.")
-        _pipeline.to(torch.device(CFG["diarize"]["device"]))
+        _pipeline.to(torch.device(resolve_device(CFG["diarize"]["device"])))
     return _pipeline
 
 

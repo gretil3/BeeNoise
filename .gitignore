@@ -3,16 +3,28 @@
 venv/
 __pycache__/
 *.pyc
+*.egg-info/
+build/
+dist/
+
+# Test / lint / type-check caches
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 .ipynb_checkpoints/
 
 # Secrets — each teammate keeps their own HF token here
 .env
+.env.*
+!.env.example
 
 # Downloaded model weights / HF cache (hundreds of MB)
 models/
 .cache/
+*.ckpt
+*.safetensors
 
 # Data: voiceprints are biometric data and recordings are personal.
 # NEVER commit them — share eval data through the team drive instead.
@@ -23,8 +35,21 @@ data/*
 outputs/
 eval/results/
 enhance.log
+*.log
+# CLI defaults that land next to whatever you ran them on
+*_denoised.wav
+*_subtitled.mp4
+# Gradio's local cache and uploads
+.gradio/
+gradio_cached_examples/
+flagged/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
 
 # Tooling
 .claude/
-.vscode/
-.idea/

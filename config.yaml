@@ -31,7 +31,7 @@ diarize:
   #   ecapa_cluster — our own simple baseline: sliding-window ECAPA embeddings +
   #                   agglomerative clustering. No token needed.
   pyannote_model: "pyannote/speaker-diarization-3.1"
-  device: cpu               # cpu | cuda
+  device: auto              # auto | cpu | cuda   (auto = cuda if available)
   num_speakers: null        # set it if you know it — helps a lot
   min_speakers: null
   max_speakers: null
@@ -49,6 +49,11 @@ speaker:
   min_segment_sec: 1.0      # shorter diarized segments aren't embedded
   min_cluster_speech_sec: 2.0  # a cluster with less speech than this stays "Speaker N"
   max_embed_sec: 10.0       # long segments are cut to this before embedding
+  max_cluster_sec: 60.0     # embed at most this much speech per cluster (longest segments
+                            # first): a steadier voiceprint, and bounded work on long files
+  merge_cosine: 0.65        # diarization often splits one voice into two clusters. Clusters
+                            # whose voiceprints have cosine >= this are treated as one speaker
+                            # (one name, one "Speaker N"). null = never merge.
 
 enroll:
   min_speech_sec: 20        # refuse enrollment below this much net speech
@@ -60,11 +65,17 @@ enroll:
 
 # --- Stage 4: transcription -------------------------------------------------
 stt:
-  model_size: small         # tiny | base | small | medium | large-v3
-  device: cpu               # cpu | cuda
-  compute_type: int8        # int8 on CPU; float16 on GPU
+  model_size: small         # tiny | base | small | medium | large-v3 | large-v3-turbo
+  device: auto              # auto | cpu | cuda   (auto = cuda if available)
+  compute_type: auto        # auto = float16 on GPU, int8 on CPU; or set one explicitly
+  cpu_threads: 0            # 0 = use every logical core (CTranslate2's own default is only 4)
   language: null            # null = auto-detect per file; "en" / "id" pins it
   beam_size: 5
+  condition_on_previous_text: false  # false stops one bad sentence from derailing the rest
+                                     # (repetition loops); WhisperX also turns this off
+  hallucination_silence_threshold: 2.0  # seconds. Drop text Whisper invents in silences longer
+                                        # than this. null = off.
+  initial_prompt: null      # optional text to bias spelling/vocabulary, e.g. names and jargon
   strategy: full            # full    — transcribe whole track once, assign words to speakers (WhisperX-style)
                             # segment — transcribe each diarized turn separately
 

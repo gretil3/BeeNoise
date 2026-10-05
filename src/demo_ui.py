@@ -469,7 +469,7 @@ with gr.Blocks(title="BeeNoise", theme=THEME, css=CSS, js=FORCE_DARK,
     # About: hero, the demo video, and the pipeline under it.
     gr.HTML(HERO, elem_id="bn-about", padding=False)
     if DEMO_VIDEO.exists():
-        gr.Video(str(DEMO_VIDEO), show_label=False, interactive=False,
+        gr.Video(str(DEMO_VIDEO), show_label=False, interactive=False, autoplay=True,
                  show_download_button=False, show_share_button=False, elem_id="bn-video")
     else:
         gr.HTML(VIDEO_PLACEHOLDER, padding=False)
@@ -553,7 +553,7 @@ def launch(share: bool = False):
     password = os.environ.get("BEENOISE_PASSWORD", "").strip()
     if ON_SPACE and not password:
         raise SystemExit("Refusing to start on a public Space without a login: add a "
-                         "BEENOISE_PASSWORD secret in the Space's settings (see DEPLOY_SPACES.md).")
+                         "BEENOISE_PASSWORD secret in the Space's settings.")
     demo.launch(share=share, auth=("beenoise", password) if password else None)
 
 
