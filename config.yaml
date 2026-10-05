@@ -93,3 +93,16 @@ paths:
   eval_dir: "data/eval"
   output_dir: "outputs"
   results_dir: "eval/results"
+
+# --- Browser app (web/) -------------------------------------------------------
+# web/ runs the same pipeline in the visitor's browser (ONNX Runtime Web). It
+# reads this file at build time, so the sections above apply there too.
+web:
+  model_repo: "phuuun/beenoise-web"  # dfn3.onnx/.json + ecapa.onnx, built by web/export_web.py
+  model_revision: 704d9b70b4aa700ee837ad3e27e76ee766170f71  # pin to the upload's commit hash so visitors' caches stay valid
+  whisper_default: base     # tiny | base | small, each a separate download in the app
+  # Diarization = pyannote segmentation-3.0 + ECAPA (instead of WeSpeaker) + clustering
+  # on diarize.cluster_threshold, the same idea as pyannote/speaker-diarization-3.1.
+  seg_step_sec: 2.5         # hop between 10 s segmentation windows (pyannote uses 1 s;
+                            # bigger = fewer ECAPA runs = faster, coarser speaker changes)
+  min_embed_sec: 1.0        # a window's local speaker with less solo speech isn't embedded

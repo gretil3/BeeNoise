@@ -28,6 +28,7 @@ python -m src.enroll --name Alex      # enroll a speaker (mic, or --file)
 python -m src.demo_ui                 # Gradio UI at http://127.0.0.1:7860
 gradio app.py                         # same UI with hot reload on file save
 python -m eval.{denoise_quality,der,speaker_id,wer}   # metrics -> eval/results/
+cd web && npm run dev / npm run check / npm run build   # browser app (see README)
 ```
 
 ## Architecture
@@ -47,6 +48,11 @@ python -m eval.{denoise_quality,der,speaker_id,wer}   # metrics -> eval/results/
   then groups words into cues.
 - `src/demo_ui.py` defines the Gradio `demo`; `app.py` is the `gradio app.py` hot-reload entry point.
   On a Space (`SPACE_ID` set) the UI refuses to start without `BEENOISE_PASSWORD`, and the Speakers tab is hidden.
+
+- `web/` is the same pipeline in the browser (static site, no backend): `pipeline.ts` ports
+  merge/speaker_id/enroll + pyannote-style diarization glue (model-free, tested by `check.ts`),
+  `worker.ts` runs the ONNX models, `models.ts` downloads/caches/deletes them (Cache API).
+  Change the Python logic, change `pipeline.ts` too. Models built by `web/export_web.py`.
 
 ## Conventions
 

@@ -53,3 +53,8 @@ desktop.ini
 
 # Tooling
 .claude/
+
+# web/ (browser app): npm deps, build output, exported models (uploaded to the Hub instead)
+web/node_modules/
+web/dist/
+web/models/
