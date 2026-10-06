@@ -190,6 +190,34 @@ python -m src.denoise noisy.wav
 
 ---
 
+## Browser app (`web/`)
+
+The whole pipeline also runs **in the visitor's browser**, no server (like SaySomething): a
+static site on Vercel. Visitors download the models once from the Models section (core
+~102 MB + one Whisper size: tiny 44 / base 80 / small 252 MB); they stay in the browser's
+Cache API until deleted from the same section. Recordings and voiceprints never leave the
+device (voiceprints live in `localStorage`).
+
+| Stage | Browser model | vs the Python pipeline |
+|---|---|---|
+| Denoise | DeepFilterNet3 as streaming ONNX ([torchDF](https://github.com/grazder/DeepFilterNet/tree/torchDF_main/torchDF)) | 27 dB SNR vs `df.enhance` |
+| Diarize | pyannote segmentation-3.0 + ECAPA + clustering | DER 0.07 vs pyannote 3.1's 0.13 on pyannote's sample |
+| Identify / enroll | ECAPA-TDNN ONNX (fbank inside) | cosine 1.000 vs SpeechBrain; same `tau` |
+| Transcribe | Whisper q8 via transformers.js | greedy decoding, language picked in the UI |
+
+```bash
+cd web && npm install
+npm run dev        # http://localhost:5173
+npm run check      # TS pipeline vs tests/ + model parity vs Python (Node)
+npm run build      # static site in web/dist (Vercel: root directory = web)
+```
+
+Tunables come from `config.yaml` (bundled at build time; `web:` holds the browser-only ones).
+Re-exporting the models (only when one changes) — see the docstring of `web/export_web.py`:
+export, `npm run check`, upload to the Hub repo in `web.model_repo`, then pin
+`web.model_revision` and update the sizes in `web/src/models.ts`.
+Before uploading, `VITE_MODEL_BASE=/models/ npm run dev` serves the files from `web/models/`.
+
 ## Evaluation
 
 First record the eval data described in [data/README.md](data/README.md).
