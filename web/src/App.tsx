@@ -311,7 +311,7 @@ export default function App() {
               <label className="check"><input type="checkbox" checked={enrollDenoise} onChange={(e) => setEnrollDenoise(e.target.checked)} />
                 <span>Denoise before enrolling<small>Tick this if you recorded somewhere noisy.</small></span></label>
               <button className="primary" disabled={!core || !reading || !cleanName || !!busy} onClick={enroll}>
-                {busy === "enroll" ? "Enrolling…" : "Enroll"}</button>
+                {busy === "enroll" ? <>Enrolling<span className="dots" aria-hidden="true"><i>.</i><i>.</i><i>.</i></span></> : "Enroll"}</button>
               {!core && <p className="muted">Download “Denoise + speakers” above first.</p>}
               {enrollMsg && <p className={enrollMsg.startsWith("Enrolled") ? "ok" : "err"}>{enrollMsg}</p>}
             </div>
