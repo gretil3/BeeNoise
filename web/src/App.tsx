@@ -1,6 +1,6 @@
 // One page, like src/demo_ui.py: About (hero, demo video, pipeline), Models
 // (download / delete), then Enroll beside Transcribe, then progress and results.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CFG } from "./config";
 import { PACKS, download, isDownloaded, isDownloading, packBytes, remove, type Pack, type WhisperSize } from "./models";
 import { encodeWav, toSrt, toVtt, type Cue, type Profile } from "./pipeline";
@@ -120,7 +120,76 @@ function AudioPick({ label, value, onChange, accept }: { label: string; value: B
   );
 }
 
+const BARS = 480;
+
+// Loudest sample in each of BARS equal slices of the clip.
+function peaks(a: Float32Array) {
+  const out = new Float32Array(BARS), step = a.length / BARS;
+  for (let i = 0; i < BARS; i++) {
+    let m = 0;
+    for (let j = Math.floor(i * step), end = Math.floor((i + 1) * step); j < end; j++) m = Math.max(m, Math.abs(a[j]));
+    out[i] = m;
+  }
+  return out;
+}
+
+// `scale` is shared by Before and After, so a quieter denoised track really looks quieter.
+// Click anywhere on it to seek; the playhead shows where the audio player is (pos is 0..1).
+function Waveform({ data, scale, color, pos, onSeek }: { data: Float32Array | null; scale: number; color: string; pos: number; onSeek: (f: number) => void }) {
+  const d = data ? Array.from(data, (p, i) => { const h = Math.max((p / scale) * 46, 0.6); return `M${i + 0.5} ${50 - h}V${50 + h}`; }).join("") : "";
+  return (
+    <div className="wavebox" aria-hidden="true" onClick={(e) => {
+      const b = e.currentTarget.getBoundingClientRect();
+      onSeek(Math.min(1, Math.max(0, (e.clientX - b.left) / b.width)));
+    }}>
+      <svg className="wave" viewBox={`0 0 ${BARS} 100`} preserveAspectRatio="none">
+        <path d="M0 50H480" stroke="rgba(255,255,255,.12)" strokeWidth="0.5" vectorEffect="non-scaling-stroke" />
+        <path d={d} stroke={color} strokeWidth="0.7" />
+      </svg>
+      <i className="playhead" style={{ left: `${pos * 100}%` }} />
+    </div>
+  );
+}
+
 function Results({ r, input, duration }: { r: RunResult; input: Blob; duration: number }) {
+  const [rawPeaks, setRawPeaks] = useState<Float32Array | null>(null);
+  const denPeaks = useMemo(() => peaks(r.denoised), [r.denoised]);
+  useEffect(() => {
+    let live = true;
+    decode(input).then((a) => live && setRawPeaks(peaks(a)), () => {}); // the waveform is optional
+    return () => { live = false; };
+  }, [input]);
+  const scale = Math.max(...denPeaks, ...(rawPeaks ?? []), 1e-6);
+
+  // Before (0) and After (1) share one playhead: playing one pauses the other, and seeking moves both.
+  const players = [useRef<HTMLAudioElement>(null), useRef<HTMLAudioElement>(null)];
+  const [pos, setPos] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const frac = (a: HTMLAudioElement) => (a.duration ? a.currentTime / a.duration : 0);
+  useEffect(() => {
+    if (!playing) return;
+    let id = 0;
+    const loop = () => {
+      const a = players.find((p) => !p.current?.paused)?.current;
+      if (a) setPos(frac(a));
+      id = requestAnimationFrame(loop);
+    };
+    id = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(id);
+  }, [playing]);
+  const audioProps = (me: number) => {
+    const mine = () => players[me].current!, other = () => players[1 - me].current!;
+    return {
+      ref: players[me],
+      onPlay: () => { if (!other().paused) other().pause(); other().currentTime = mine().currentTime; setPlaying(true); },
+      onPause: () => setPlaying(!other().paused),
+      onSeeked: () => {
+        if (Math.abs(other().currentTime - mine().currentTime) > 0.05) other().currentTime = mine().currentTime;
+        setPos(frac(mine()));
+      },
+    };
+  };
+  const seek = (me: number) => (f: number) => { const a = players[me].current; if (a?.duration) a.currentTime = f * a.duration; };
   const colors = new Map<string, string>();
   r.cues.forEach((c) => colors.has(c.speaker) || colors.set(c.speaker, SPEAKER_COLORS[colors.size % SPEAKER_COLORS.length]));
   const [urls] = useState(() => {
@@ -172,8 +241,12 @@ function Results({ r, input, duration }: { r: RunResult; input: Blob; duration: 
         </div>
       )}
       <div className="pair">
-        <div className="card"><div className="head">Before</div><audio controls src={urls.input} /></div>
-        <div className="card"><div className="head">After, denoised</div><audio controls src={urls.denoised} /></div>
+        <div className="card"><div className="head">Before</div>
+          <Waveform data={rawPeaks} scale={scale} color="#8e8e93" pos={pos} onSeek={seek(0)} />
+          <audio controls src={urls.input} {...audioProps(0)} /></div>
+        <div className="card"><div className="head">After, denoised</div>
+          <Waveform data={denPeaks} scale={scale} color="#FFB300" pos={pos} onSeek={seek(1)} />
+          <audio controls src={urls.denoised} {...audioProps(1)} /></div>
       </div>
       <div className="card downloads">
         <div className="head">Downloads</div>

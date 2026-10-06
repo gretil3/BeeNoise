@@ -169,6 +169,9 @@ details > .check { margin-bottom: 14px; }
 .cue p { margin: 0; }
 video { width: 100%; border-radius: 12px; }
 audio { width: 100%; }
+.wavebox { position: relative; height: 80px; margin-bottom: 14px; background: var(--card-2); border-radius: 10px; overflow: hidden; cursor: pointer; }
+.wave { display: block; width: 100%; height: 100%; }
+.playhead { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #fff; pointer-events: none; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .pair .card { margin-bottom: 16px; }
 .downloads { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
